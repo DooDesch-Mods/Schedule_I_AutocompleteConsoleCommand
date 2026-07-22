@@ -1,0 +1,8 @@
+bin/
+obj/
+.vs/
+*.user
+local.build.props
+s1interop-runs/
+s1interop-cache/
+artifacts/

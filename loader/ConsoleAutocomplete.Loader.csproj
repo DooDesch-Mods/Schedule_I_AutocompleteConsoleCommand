@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <AssemblyName>ConsoleAutocomplete.Loader</AssemblyName>
+    <RootNamespace>ConsoleAutocomplete.Loader</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <MelonLoaderMonoPath>$(MelonLoaderPath)\net35</MelonLoaderMonoPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="MelonLoader">
+      <HintPath>$(MelonLoaderMonoPath)\MelonLoader.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <Target Name="CopyToMelonPlugins" AfterTargets="Build">
+    <MakeDir Directories="$(GameCorePath)\Plugins" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(GameCorePath)\Plugins" SkipUnchangedFiles="true" />
+  </Target>
+</Project>

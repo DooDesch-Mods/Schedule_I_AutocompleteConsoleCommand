@@ -1,0 +1,84 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+    <DefineConstants>$(DefineConstants);IL2CPP</DefineConstants>
+    <AssemblyName>ConsoleAutocomplete.IL2CPP</AssemblyName>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+    <MelonLoaderNet6Path>$(MelonLoaderPath)\net6</MelonLoaderNet6Path>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="src\Util\GameTypes\GlobalUsings.IL2CPP.cs" />
+  </ItemGroup>
+
+  <Target Name="ValidateIl2CppAssemblies" BeforeTargets="CoreCompile">
+    <Error
+      Condition="!Exists('$(Il2CppAssembliesPath)\Assembly-CSharp.dll')"
+      Text="IL2CPP interop assemblies not found. Launch Schedule I once with MelonLoader so $(Il2CppAssembliesPath) is generated." />
+  </Target>
+
+  <ItemGroup>
+    <Reference Include="MelonLoader">
+      <HintPath>$(MelonLoaderNet6Path)\MelonLoader.dll</HintPath>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>$(MelonLoaderNet6Path)\0Harmony.dll</HintPath>
+    </Reference>
+    <Reference Include="Il2CppInterop.Runtime">
+      <HintPath>$(MelonLoaderNet6Path)\Il2CppInterop.Runtime.dll</HintPath>
+    </Reference>
+    <Reference Include="Il2Cppmscorlib">
+      <HintPath>$(Il2CppAssembliesPath)\Il2Cppmscorlib.dll</HintPath>
+    </Reference>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(Il2CppAssembliesPath)\Assembly-CSharp.dll</HintPath>
+    </Reference>
+    <Reference Include="Assembly-CSharp-firstpass">
+      <HintPath>$(Il2CppAssembliesPath)\Assembly-CSharp-firstpass.dll</HintPath>
+    </Reference>
+    <Reference Include="Il2CppFishNet.Runtime">
+      <HintPath>$(Il2CppAssembliesPath)\Il2CppFishNet.Runtime.dll</HintPath>
+    </Reference>
+    <Reference Include="Il2CppScheduleOne.Core">
+      <HintPath>$(Il2CppAssembliesPath)\Il2CppScheduleOne.Core.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>$(Il2CppAssembliesPath)\UnityEngine.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(Il2CppAssembliesPath)\UnityEngine.CoreModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.InputLegacyModule">
+      <HintPath>$(Il2CppAssembliesPath)\UnityEngine.InputLegacyModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.UIModule">
+      <HintPath>$(Il2CppAssembliesPath)\UnityEngine.UIModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.UI">
+      <HintPath>$(Il2CppAssembliesPath)\UnityEngine.UI.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.TextRenderingModule">
+      <HintPath>$(Il2CppAssembliesPath)\UnityEngine.TextRenderingModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.IMGUIModule">
+      <HintPath>$(Il2CppAssembliesPath)\UnityEngine.IMGUIModule.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.TextMeshPro">
+      <HintPath>$(Il2CppAssembliesPath)\Unity.TextMeshPro.dll</HintPath>
+    </Reference>
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>$(MelonLoaderNet6Path)\Newtonsoft.Json.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <Target Name="CopyToMelonMods" AfterTargets="Build">
+    <MakeDir Directories="$(GameCorePath)\Mods" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(GameCorePath)\Mods" SkipUnchangedFiles="true" />
+  </Target>
+</Project>

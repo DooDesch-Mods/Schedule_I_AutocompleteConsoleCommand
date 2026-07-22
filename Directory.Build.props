@@ -1,0 +1,19 @@
+<Project>
+  <PropertyGroup>
+    <AssemblyName Condition="'$(MSBuildProjectName)' != 'ConsoleAutocomplete.Loader'">ConsoleAutocomplete</AssemblyName>
+    <RootNamespace Condition="'$(MSBuildProjectName)' != 'ConsoleAutocomplete.Loader'">ConsoleAutocomplete</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <EnableDefaultEmbeddedResourceItems>false</EnableDefaultEmbeddedResourceItems>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+
+    <!-- Override via -p:GameCorePath="..." or local.build.props -->
+    <GameCorePath Condition="'$(GameCorePath)' == ''">D:\SteamLibrary\steamapps\common\Schedule I</GameCorePath>
+    <MelonLoaderPath>$(GameCorePath)\MelonLoader</MelonLoaderPath>
+    <Il2CppAssembliesPath>$(MelonLoaderPath)\Il2CppAssemblies</Il2CppAssembliesPath>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(MSBuildProjectName)' != 'ConsoleAutocomplete.Loader'">
+    <Compile Include="src\**\*.cs" Exclude="src\Util\GameTypes\GlobalUsings.IL2CPP.cs;src\Util\GameTypes\GlobalUsings.Mono.cs" />
+  </ItemGroup>
+</Project>

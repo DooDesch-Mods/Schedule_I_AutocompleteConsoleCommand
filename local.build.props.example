@@ -1,0 +1,8 @@
+<Project>
+  <!-- Copy to local.build.props (gitignored) and set your Schedule I install path. -->
+  <PropertyGroup>
+    <GameCorePath>D:\SteamLibrary\steamapps\common\Schedule I</GameCorePath>
+    <!-- Optional: Mono alternate-branch Managed folder when building Autocomplete.csproj -->
+    <!-- <GameManagedPath>D:\path\to\Schedule I_Data\Managed</GameManagedPath> -->
+  </PropertyGroup>
+</Project>

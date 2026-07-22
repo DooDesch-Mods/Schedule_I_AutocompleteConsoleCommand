@@ -1,0 +1,71 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <Platforms>AnyCPU</Platforms>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <DefineConstants>$(DefineConstants);MONO</DefineConstants>
+    <AssemblyName>ConsoleAutocomplete</AssemblyName>
+
+    <GameManagedPath Condition="'$(GameManagedPath)' == ''">$(GameCorePath)\Schedule I_Data\Managed</GameManagedPath>
+    <MelonLoaderMonoPath>$(MelonLoaderPath)\net35</MelonLoaderMonoPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="src\Util\GameTypes\GlobalUsings.Mono.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="MelonLoader">
+      <HintPath>$(MelonLoaderMonoPath)\MelonLoader.dll</HintPath>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>$(MelonLoaderMonoPath)\0Harmony.dll</HintPath>
+    </Reference>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(GameManagedPath)\Assembly-CSharp.dll</HintPath>
+    </Reference>
+    <Reference Include="Assembly-CSharp-firstpass">
+      <HintPath>$(GameManagedPath)\Assembly-CSharp-firstpass.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>$(GameManagedPath)\UnityEngine.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(GameManagedPath)\UnityEngine.CoreModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.InputLegacyModule">
+      <HintPath>$(GameManagedPath)\UnityEngine.InputLegacyModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.UIModule">
+      <HintPath>$(GameManagedPath)\UnityEngine.UIModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.UI">
+      <HintPath>$(GameManagedPath)\UnityEngine.UI.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.TextRenderingModule">
+      <HintPath>$(GameManagedPath)\UnityEngine.TextRenderingModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.IMGUIModule">
+      <HintPath>$(GameManagedPath)\UnityEngine.IMGUIModule.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.TextMeshPro">
+      <HintPath>$(GameManagedPath)\Unity.TextMeshPro.dll</HintPath>
+    </Reference>
+    <Reference Include="FishNet.Runtime">
+      <HintPath>$(GameManagedPath)\FishNet.Runtime.dll</HintPath>
+    </Reference>
+    <Reference Include="ScheduleOne.Core">
+      <HintPath>$(GameManagedPath)\ScheduleOne.Core.dll</HintPath>
+    </Reference>
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>$(MelonLoaderMonoPath)\Newtonsoft.Json.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <Target Name="CopyToMelonMods" AfterTargets="Build">
+    <MakeDir Directories="$(GameCorePath)\Mods" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(GameCorePath)\Mods" SkipUnchangedFiles="true" />
+  </Target>
+</Project>
