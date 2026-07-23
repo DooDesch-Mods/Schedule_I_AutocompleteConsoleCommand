@@ -79,6 +79,12 @@
 
   <Target Name="CopyToMelonMods" AfterTargets="Build">
     <MakeDir Directories="$(GameCorePath)\Mods" />
-    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(GameCorePath)\Mods" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(GameCorePath)\Mods" SkipUnchangedFiles="false" />
+    <!-- Debug builds also drop a marker file so you can confirm which DLL is installed. -->
+    <WriteLinesToFile
+      Condition="'$(Configuration)' == 'Debug'"
+      File="$(GameCorePath)\Mods\ConsoleAutocomplete.IL2CPP.debug.marker"
+      Lines="Built $(Configuration) $(TargetPath) at $([System.DateTime]::Now.ToString('o'))"
+      Overwrite="true" />
   </Target>
 </Project>

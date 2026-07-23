@@ -27,4 +27,22 @@ Outputs (also copied when `GameCorePath` is set):
 
 Copy `local.build.props.example` to `local.build.props` and set `GameCorePath`.
 
-Usage stats are save-specific (written on game save, cleared when leaving a save).
+## Testing mod-added commands
+
+Use the sibling probe mod [`Schedule_I_CommandProbe`](../Schedule_I_CommandProbe) — it injects `acprobe*` commands into native `Console.Commands` (unlike S1API’s managed-only registry). Type `acprobe` in the console to verify Autocomplete picks them up.
+
+## Debug / IL2CPP troubleshooting
+
+```powershell
+# Verbose Melon [dbg] logs — use this when diagnosing IL2CPP
+dotnet build .\Autocomplete.Il2Cpp.csproj -c Debug
+```
+
+Look for `[ConsoleAutocomplete] [dbg]` in `MelonLoader/Latest.log` when opening the console and typing.
+A `Mods/ConsoleAutocomplete.IL2CPP.debug.marker` file confirms the Debug DLL was copied.
+
+Release (quieter):
+
+```powershell
+dotnet build .\Autocomplete.Il2Cpp.csproj -c Release
+```

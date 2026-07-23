@@ -25,17 +25,36 @@ namespace ConsoleAutocomplete.Autocomplete.ArgProviders
         public static void Initialize()
         {
             _providers.Clear();
+
+            // give → any item id (mod-added items appear via Registry)
             _providers.Add(new ItemArgProvider("give", 0));
-            _providers.Add(new ItemArgProvider("setdiscovered", 0));
-            _providers.Add(new ItemArgProvider("packageproduct", 0));
+
+            // setdiscovered → product definitions only
+            _providers.Add(new TypedItemArgProvider("setdiscovered", 0, ItemKind.Product));
+
+            // packageproduct → packaging definitions only (jar, baggie, …) — not acid/etc.
+            _providers.Add(new TypedItemArgProvider("packageproduct", 0, ItemKind.Packaging));
+
             _providers.Add(new TeleportArgProvider());
             _providers.Add(new PropertyArgProvider("setowned", 0));
             _providers.Add(new NpcArgProvider("setunlocked", 0));
             _providers.Add(new NpcArgProvider("setrelationship", 0));
             _providers.Add(new VehicleArgProvider());
-            _providers.Add(new EnumArgProvider("setquality", 0, "ScheduleOne.ItemFramework.EQuality", "Il2CppScheduleOne.ItemFramework.EQuality"));
-            _providers.Add(new EnumArgProvider("setregionunlocked", 0, "ScheduleOne.Map.EMapRegion", "Il2CppScheduleOne.Map.EMapRegion"));
-            _providers.Add(new EnumArgProvider("addemployee", 0, "ScheduleOne.Employees.EEmployeeType", "Il2CppScheduleOne.Employees.EEmployeeType"));
+            _providers.Add(new EnumArgProvider(
+                "setquality",
+                0,
+                "ScheduleOne.ItemFramework.EQuality",
+                "Il2CppScheduleOne.ItemFramework.EQuality"));
+            _providers.Add(new EnumArgProvider(
+                "setregionunlocked",
+                0,
+                "ScheduleOne.Map.EMapRegion",
+                "Il2CppScheduleOne.Map.EMapRegion"));
+            _providers.Add(new EnumArgProvider(
+                "addemployee",
+                0,
+                "ScheduleOne.Employees.EEmployeeType",
+                "Il2CppScheduleOne.Employees.EEmployeeType"));
             _providers.Add(new BoolArgProvider("setpoliceignoreplayers", 0));
             _providers.Add(new WeatherArgProvider());
         }
@@ -82,13 +101,137 @@ namespace ConsoleAutocomplete.Autocomplete.ArgProviders
                         candidates.Add(candidate);
                 }
 
-                return candidates.Count > 0;
+                ModLog.Debug(
+                    "ArgProvider '"
+                    + commandWord
+                    + "'["
+                    + argIndex
+                    + "] → "
+                    + candidates.Count
+                    + " candidate(s).");
+
+                // Provider owns this slot even if empty (prevents wrong fallback heuristics).
+                return true;
+            }
+
+            return false;
+        }
+
+        internal static bool IsKind(ItemDefinition item, ItemKind kind)
+        {
+            if (item == null)
+                return false;
+
+            switch (kind)
+            {
+                case ItemKind.Packaging:
+                    return IsPackaging(item);
+                case ItemKind.Product:
+                    return IsProduct(item) && !IsPackaging(item);
+                default:
+                    return true;
+            }
+        }
+
+        private static bool IsPackaging(ItemDefinition item)
+        {
+#if IL2CPP
+            try
+            {
+                if (item.TryCast<Il2CppScheduleOne.Product.Packaging.PackagingDefinition>() != null)
+                    return true;
+            }
+            catch
+            {
+                // ignored
+            }
+
+            // Prefer Il2Cpp runtime type — managed GetType() often reports the List`1 element
+            // proxy (ItemDefinition) even when the native object is PackagingDefinition.
+            try
+            {
+                Il2CppSystem.Type il2Type = item.GetIl2CppType();
+                if (il2Type != null)
+                {
+                    string name = il2Type.Name ?? string.Empty;
+                    string full = il2Type.FullName ?? string.Empty;
+                    if (name.IndexOf("PackagingDefinition", StringComparison.OrdinalIgnoreCase) >= 0
+                        || full.IndexOf("PackagingDefinition", StringComparison.OrdinalIgnoreCase) >= 0)
+                        return true;
+                }
+            }
+            catch
+            {
+                // ignored
+            }
+#else
+            if (item is ScheduleOne.Product.Packaging.PackagingDefinition)
+                return true;
+#endif
+            return TypeNameContains(item.GetType(), "PackagingDefinition");
+        }
+
+        private static bool IsProduct(ItemDefinition item)
+        {
+#if IL2CPP
+            try
+            {
+                if (item.TryCast<Il2CppScheduleOne.Product.ProductDefinition>() != null)
+                    return true;
+            }
+            catch
+            {
+                // ignored
+            }
+
+            try
+            {
+                Il2CppSystem.Type il2Type = item.GetIl2CppType();
+                if (il2Type != null)
+                {
+                    string name = il2Type.Name ?? string.Empty;
+                    string full = il2Type.FullName ?? string.Empty;
+                    if (name.IndexOf("ProductDefinition", StringComparison.OrdinalIgnoreCase) >= 0
+                        || full.IndexOf("ProductDefinition", StringComparison.OrdinalIgnoreCase) >= 0)
+                        return true;
+                }
+            }
+            catch
+            {
+                // ignored
+            }
+#else
+            if (item is ScheduleOne.Product.ProductDefinition)
+                return true;
+#endif
+            return TypeNameContains(item.GetType(), "ProductDefinition");
+        }
+
+        private static bool TypeNameContains(Type type, string token)
+        {
+            while (type != null)
+            {
+                string name = type.Name ?? string.Empty;
+                string full = type.FullName ?? string.Empty;
+                if (name.IndexOf(token, StringComparison.OrdinalIgnoreCase) >= 0
+                    || full.IndexOf(token, StringComparison.OrdinalIgnoreCase) >= 0)
+                    return true;
+
+                type = type.BaseType;
             }
 
             return false;
         }
     }
 
+    internal enum ItemKind
+    {
+        Any,
+        Packaging,
+        Product
+    }
+
+    /// <summary>All registry items (except cash) — used by give.</summary>
     internal sealed class ItemArgProvider : IArgProvider
     {
         public ItemArgProvider(string commandWord, int argIndex)
@@ -116,6 +259,103 @@ namespace ConsoleAutocomplete.Autocomplete.ArgProviders
                     SourceLabel = ArgProviderRegistry.GetItemSource(item.ID)
                 };
             }
+        }
+    }
+
+    /// <summary>Registry items filtered to a concrete definition type.</summary>
+    internal sealed class TypedItemArgProvider : IArgProvider
+    {
+        private readonly ItemKind _kind;
+
+        public TypedItemArgProvider(string commandWord, int argIndex, ItemKind kind)
+        {
+            CommandWord = commandWord;
+            ArgIndex = argIndex;
+            _kind = kind;
+        }
+
+        public string CommandWord { get; }
+        public int ArgIndex { get; }
+
+        public IEnumerable<ArgCandidate> GetCandidates()
+        {
+            int scanned = 0;
+            int matched = 0;
+            var results = new List<ArgCandidate>();
+
+            foreach (ItemDefinition item in GameRegistry.EnumerateAllItems())
+            {
+                if (item == null || string.IsNullOrWhiteSpace(item.ID))
+                    continue;
+
+                scanned++;
+
+                // One-shot diagnostics for known packaging IDs when filter is broken.
+                if (_kind == ItemKind.Packaging
+                    && (item.ID.Equals("baggie", StringComparison.OrdinalIgnoreCase)
+                        || item.ID.Equals("jar", StringComparison.OrdinalIgnoreCase)))
+                {
+                    string managedType = item.GetType().FullName ?? item.GetType().Name;
+                    string il2Name = "?";
+#if IL2CPP
+                    try
+                    {
+                        Il2CppSystem.Type il2 = item.GetIl2CppType();
+                        il2Name = il2 != null ? (il2.FullName ?? il2.Name) : "null";
+                    }
+                    catch (Exception ex)
+                    {
+                        il2Name = "err:" + ex.GetType().Name;
+                    }
+#endif
+                    ModLog.Debug(
+                        "Packaging probe id='"
+                        + item.ID
+                        + "' managed='"
+                        + managedType
+                        + "' il2='"
+                        + il2Name
+                        + "' isKind="
+                        + ArgProviderRegistry.IsKind(item, _kind));
+                }
+
+                if (!ArgProviderRegistry.IsKind(item, _kind))
+                    continue;
+
+                matched++;
+                results.Add(new ArgCandidate
+                {
+                    Value = item.ID.ToLowerInvariant(),
+                    SourceLabel = ArgProviderRegistry.GetItemSource(item.ID)
+                });
+            }
+
+            // IL2CPP GetAllItems sometimes exposes packaging only as base ItemDefinition;
+            // seed the known vanilla packaging ids so autocomplete still works.
+            if (_kind == ItemKind.Packaging && matched == 0)
+            {
+                ModLog.Debug(
+                    "Packaging filter matched 0 / "
+                    + scanned
+                    + " items — seeding jar/baggie fallbacks.");
+
+                string[] fallbacks = { "jar", "baggie" };
+                for (int i = 0; i < fallbacks.Length; i++)
+                {
+                    string id = fallbacks[i];
+                    results.Add(new ArgCandidate
+                    {
+                        Value = id,
+                        SourceLabel = ArgProviderRegistry.GetItemSource(id)
+                    });
+                }
+            }
+            else if (_kind == ItemKind.Packaging)
+            {
+                ModLog.Debug("Packaging filter matched " + matched + " / " + scanned + " items.");
+            }
+
+            return results;
         }
     }
 

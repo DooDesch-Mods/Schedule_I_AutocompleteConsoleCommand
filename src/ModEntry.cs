@@ -20,9 +20,17 @@ namespace ConsoleAutocomplete
         public override void OnInitializeMelon()
         {
             ModLog.SetPrefix("[ConsoleAutocomplete]");
+            ModLog.ConfigureDefaultVerbosity();
             ArgProviderRegistry.Initialize();
             HarmonyBootstrap.Apply(typeof(ModEntry).Assembly);
+#if DEBUG || AUTOCOMPLETE_DEBUG
+            ModLog.Info(
+                "Console Autocomplete loaded ("
+                + ModInfo.ModVersion
+                + ") [DEBUG — watch Melon log for [dbg] lines].");
+#else
             ModLog.Info("Console Autocomplete loaded (" + ModInfo.ModVersion + ").");
+#endif
         }
 
         public override void OnSceneWasLoaded(int buildIndex, string sceneName)

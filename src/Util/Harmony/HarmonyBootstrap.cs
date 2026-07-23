@@ -30,13 +30,14 @@ namespace ConsoleAutocomplete.Util.Harmony
                 {
                     new PatchClassProcessor(_harmony, patchType).Patch();
                     _appliedCount++;
+                    ModLog.Debug("Patched " + patchType.FullName);
                 }
                 catch (Exception ex)
                 {
                     _failedCount++;
                     ModLog.ErrorOnce(
                         "harmony-patch:" + patchType.FullName,
-                        "Harmony patch failed for " + patchType.FullName + ": " + ex.Message);
+                        "Harmony patch failed for " + patchType.FullName + ": " + ex);
                 }
             }
 

@@ -13,6 +13,11 @@
     <Il2CppAssembliesPath>$(MelonLoaderPath)\Il2CppAssemblies</Il2CppAssembliesPath>
   </PropertyGroup>
 
+  <!-- Debug builds: verbose Melon console tracing for autocomplete. -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+    <DefineConstants>$(DefineConstants);AUTOCOMPLETE_DEBUG</DefineConstants>
+  </PropertyGroup>
+
   <ItemGroup Condition="'$(MSBuildProjectName)' != 'ConsoleAutocomplete.Loader'">
     <Compile Include="src\**\*.cs" Exclude="src\Util\GameTypes\GlobalUsings.IL2CPP.cs;src\Util\GameTypes\GlobalUsings.Mono.cs" />
   </ItemGroup>

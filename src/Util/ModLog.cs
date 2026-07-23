@@ -6,11 +6,29 @@ namespace ConsoleAutocomplete.Util
     public static class ModLog
     {
         private static string _prefix = "[ConsoleAutocomplete]";
+        private static bool _verbose;
+
+        /// <summary>Force verbose logs at runtime (Debug builds default on).</summary>
+        public static bool Verbose
+        {
+            get => _verbose;
+            set => _verbose = value;
+        }
 
         public static void SetPrefix(string prefix)
         {
             if (!string.IsNullOrWhiteSpace(prefix))
                 _prefix = prefix;
+        }
+
+        public static void ConfigureDefaultVerbosity()
+        {
+#if DEBUG || AUTOCOMPLETE_DEBUG
+            _verbose = true;
+            MelonLogger.Msg(_prefix + " Verbose/debug logging ENABLED (Debug build).");
+#else
+            _verbose = false;
+#endif
         }
 
         public static void Info(string message) => MelonLogger.Msg(_prefix + " " + message);
@@ -21,11 +39,10 @@ namespace ConsoleAutocomplete.Util
 
         public static void Debug(string message)
         {
-#if DEBUG
+            if (!_verbose)
+                return;
+
             MelonLogger.Msg(_prefix + " [dbg] " + message);
-#else
-            _ = message;
-#endif
         }
 
         public static void ErrorOnce(string key, string message)

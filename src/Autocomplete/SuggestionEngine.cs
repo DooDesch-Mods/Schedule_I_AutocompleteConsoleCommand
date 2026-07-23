@@ -13,12 +13,17 @@ namespace ConsoleAutocomplete.Autocomplete
         {
             public string StructureHeader { get; set; } = string.Empty;
             public string DescriptionHelper { get; set; } = string.Empty;
+            public string SourceHelper { get; set; } = string.Empty;
             public List<SuggestionItem> Suggestions { get; set; } = new List<SuggestionItem>();
             public int SelectedIndex { get; set; }
             public string CurrentToken { get; set; } = string.Empty;
             public int TokenStart { get; set; }
             public int TokenEnd { get; set; }
             public bool HasSuggestions => Suggestions != null && Suggestions.Count > 0;
+            public bool HasHelper =>
+                !string.IsNullOrEmpty(StructureHeader)
+                || !string.IsNullOrEmpty(DescriptionHelper)
+                || HasSuggestions;
 
             public SuggestionItem Selected =>
                 HasSuggestions && SelectedIndex >= 0 && SelectedIndex < Suggestions.Count
@@ -60,26 +65,13 @@ namespace ConsoleAutocomplete.Autocomplete
                 }
 
                 result.Suggestions = UsageStats.RankCommands(suggestions);
-                if (result.Suggestions.Count > 0)
-                {
-                    SuggestionItem selectedPreview = result.Suggestions[
-                        ClampIndex(selectedIndex, result.Suggestions.Count)];
-                    result.StructureHeader = selectedPreview.StructureHeader
-                                            ?? selectedPreview.Value;
-                    // Stash description via StructureHeader path — engine fills DescriptionHelper below.
-                    if (CommandIndex.TryGet(selectedPreview.Value, out CommandEntry selectedCmd))
-                        result.DescriptionHelper = selectedCmd.Description ?? string.Empty;
-                    else
-                        result.DescriptionHelper = string.Empty;
-                }
-
                 result.SelectedIndex = ClampIndex(selectedIndex, result.Suggestions.Count);
-                // Keep header in sync with final selection.
                 if (result.Selected != null)
                 {
                     result.StructureHeader = result.Selected.StructureHeader ?? result.Selected.Value;
-                    if (CommandIndex.TryGet(result.Selected.Value, out CommandEntry selectedCmd2))
-                        result.DescriptionHelper = selectedCmd2.Description ?? string.Empty;
+                    result.SourceHelper = result.Selected.SourceLabel ?? string.Empty;
+                    if (CommandIndex.TryGet(result.Selected.Value, out CommandEntry selectedCmd))
+                        result.DescriptionHelper = selectedCmd.Description ?? string.Empty;
                 }
 
                 return result;
@@ -90,11 +82,17 @@ namespace ConsoleAutocomplete.Autocomplete
             result.StructureHeader = command?.StructureHeader
                                      ?? ExampleUsageNormalizer.Normalize(commandWord, command?.ExampleUsage);
             result.DescriptionHelper = command?.Description ?? string.Empty;
+            result.SourceHelper = command?.SourceLabel ?? string.Empty;
 
             string argPrefix = token;
             var argSuggestions = new List<SuggestionItem>();
 
-            if (ArgProviderRegistry.TryGetCandidates(commandWord, argIndex - 1, out List<ArgCandidate> candidates))
+            bool hasProvider = ArgProviderRegistry.TryGetCandidates(
+                commandWord,
+                argIndex - 1,
+                out List<ArgCandidate> candidates);
+
+            if (hasProvider && candidates != null)
             {
                 foreach (ArgCandidate candidate in candidates)
                 {
@@ -110,7 +108,12 @@ namespace ConsoleAutocomplete.Autocomplete
                     });
                 }
             }
-            else if (command != null && !string.IsNullOrWhiteSpace(command.ExampleUsage))
+
+            // If the dedicated provider found nothing, still surface ExampleUsage samples
+            // (covers IL2CPP type-filter misses like packageproduct packaging ids).
+            if (argSuggestions.Count == 0
+                && command != null
+                && !string.IsNullOrWhiteSpace(command.ExampleUsage))
             {
                 foreach (string sample in ExtractExampleTokens(command.ExampleUsage, argIndex))
                 {

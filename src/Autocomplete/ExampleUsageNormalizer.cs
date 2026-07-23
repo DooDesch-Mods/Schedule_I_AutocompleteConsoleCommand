@@ -40,6 +40,10 @@ namespace ConsoleAutocomplete.Autocomplete
             // Built-in overrides for clearer schemas than raw examples.
             switch (word)
             {
+                case "packageproduct":
+                    return "packageproduct <packaging>";
+                case "setdiscovered":
+                    return "setdiscovered <product>";
                 case "give":
                     return "give <item> [quantity]";
                 case "teleport":
@@ -52,10 +56,6 @@ namespace ConsoleAutocomplete.Autocomplete
                     return "setunlocked <npc>";
                 case "setrelationship":
                     return "setrelationship <npc> <value>";
-                case "setdiscovered":
-                    return "setdiscovered <product>";
-                case "packageproduct":
-                    return "packageproduct <packaging>";
                 case "addemployee":
                     return "addemployee <type> <property>";
                 case "setquality":

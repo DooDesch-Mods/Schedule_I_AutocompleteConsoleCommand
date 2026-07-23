@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Text;
 using ConsoleAutocomplete.Util;
 using UnityEngine;
@@ -8,19 +7,22 @@ using UnityEngine.UI;
 namespace ConsoleAutocomplete.Autocomplete
 {
     /// <summary>
-    /// Runtime overlay: structure helper, description, suggestion rows (value — source), ghost suffix.
+    /// Dropdown panel hung <b>below</b> the console input bar (not above — that goes off the top of the screen).
+    /// Order: structure → helper/source → suggestion rows.
     /// </summary>
     public sealed class SuggestionOverlay
     {
         private const int MaxRows = SuggestionEngine.MaxVisibleSuggestions;
 
         private GameObject _root;
+        private RectTransform _rootRt;
+        private GameObject _rowsRoot;
         private TextMeshProUGUI _header;
         private TextMeshProUGUI _helper;
         private TextMeshProUGUI _ghost;
         private readonly TextMeshProUGUI[] _rows = new TextMeshProUGUI[MaxRows];
-        private Image _background;
         private TMP_InputField _input;
+        private ConsoleUI _ui;
         private bool _visible;
 
         public bool IsVisible => _visible;
@@ -31,30 +33,41 @@ namespace ConsoleAutocomplete.Autocomplete
             if (consoleUi == null || consoleUi.InputField == null)
                 return;
 
+            _ui = consoleUi;
             _input = consoleUi.InputField;
             if (_root != null)
+            {
+                RepositionUnderInput();
                 return;
+            }
 
-            Transform parent = consoleUi.Container != null
-                ? consoleUi.Container.transform
-                : consoleUi.transform;
+            // Prefer the screen canvas so we are not clipped inside the thin top bar.
+            Transform parent = null;
+            if (consoleUi.canvas != null)
+                parent = consoleUi.canvas.transform;
+            else if (consoleUi.Container != null)
+                parent = consoleUi.Container.transform;
+            else
+                parent = consoleUi.transform;
 
             _root = new GameObject("ConsoleAutocompleteOverlay");
             _root.transform.SetParent(parent, false);
+            _root.transform.SetAsLastSibling();
 
-            RectTransform rootRt = _root.AddComponent<RectTransform>();
-            rootRt.anchorMin = new Vector2(0f, 0f);
-            rootRt.anchorMax = new Vector2(1f, 0f);
-            rootRt.pivot = new Vector2(0.5f, 0f);
-            rootRt.anchoredPosition = new Vector2(0f, 36f);
-            rootRt.sizeDelta = new Vector2(-20f, 260f);
+            _rootRt = _root.AddComponent<RectTransform>();
+            // Hang downward from a top anchor (console is a top bar — growing upward leaves the screen).
+            _rootRt.anchorMin = new Vector2(0f, 1f);
+            _rootRt.anchorMax = new Vector2(1f, 1f);
+            _rootRt.pivot = new Vector2(0.5f, 1f);
+            _rootRt.sizeDelta = new Vector2(-24f, 0f);
 
-            _background = _root.AddComponent<Image>();
-            _background.color = new Color(0.05f, 0.05f, 0.05f, 0.92f);
+            Image background = _root.AddComponent<Image>();
+            background.color = new Color(0.04f, 0.05f, 0.08f, 0.97f);
+            background.raycastTarget = false;
 
             VerticalLayoutGroup layout = _root.AddComponent<VerticalLayoutGroup>();
-            layout.padding = new RectOffset(10, 10, 8, 8);
-            layout.spacing = 2f;
+            layout.padding = new RectOffset(12, 12, 10, 10);
+            layout.spacing = 4f;
             layout.childAlignment = TextAnchor.UpperLeft;
             layout.childControlHeight = true;
             layout.childControlWidth = true;
@@ -65,32 +78,43 @@ namespace ConsoleAutocomplete.Autocomplete
             fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
             fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
 
-            _header = CreateText(_root.transform, "Header", 16f, FontStyles.Bold);
-            _header.color = new Color(0.85f, 0.92f, 1f, 1f);
+            _header = CreateText(_root.transform, "Structure", 17f);
+            _header.color = new Color(1f, 0.86f, 0.4f, 1f);
+            SetFixedHeight(_header, 24f);
 
-            _helper = CreateText(_root.transform, "Helper", 13f, FontStyles.Italic);
-            _helper.color = new Color(0.65f, 0.7f, 0.75f, 1f);
+            _helper = CreateText(_root.transform, "Helper", 13f);
+            _helper.color = new Color(0.78f, 0.84f, 0.92f, 1f);
 #if MONO
             _helper.textWrappingMode = TextWrappingModes.Normal;
 #else
             _helper.enableWordWrapping = true;
 #endif
-            _helper.overflowMode = TextOverflowModes.Ellipsis;
-            LayoutElement helperLe = _helper.GetComponent<LayoutElement>();
-            if (helperLe != null)
-            {
-                helperLe.minHeight = 18f;
-                helperLe.preferredHeight = 32f;
-            }
+            _helper.overflowMode = TextOverflowModes.Overflow;
+            SetFixedHeight(_helper, 36f);
+
+            _rowsRoot = new GameObject("Rows");
+            _rowsRoot.transform.SetParent(_root.transform, false);
+            VerticalLayoutGroup rowsLayout = _rowsRoot.AddComponent<VerticalLayoutGroup>();
+            rowsLayout.spacing = 2f;
+            rowsLayout.childControlHeight = true;
+            rowsLayout.childControlWidth = true;
+            rowsLayout.childForceExpandHeight = false;
+            rowsLayout.childForceExpandWidth = true;
+            ContentSizeFitter rowsFit = _rowsRoot.AddComponent<ContentSizeFitter>();
+            rowsFit.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 
             for (int i = 0; i < MaxRows; i++)
             {
-                _rows[i] = CreateText(_root.transform, "Row" + i, 15f, FontStyles.Normal);
+                _rows[i] = CreateText(_rowsRoot.transform, "Row" + i, 15f);
                 _rows[i].richText = true;
+                _rows[i].overflowMode = TextOverflowModes.Overflow;
             }
 
+            SyncFontsFromInput();
             CreateGhost(consoleUi);
+            RepositionUnderInput();
             Hide();
+            ModLog.Debug("SuggestionOverlay attached under console input (canvas parent).");
         }
 
         public void Destroy()
@@ -105,6 +129,7 @@ namespace ConsoleAutocomplete.Autocomplete
             {
                 UnityEngine.Object.Destroy(_root);
                 _root = null;
+                _rootRt = null;
             }
 
             _visible = false;
@@ -127,36 +152,46 @@ namespace ConsoleAutocomplete.Autocomplete
             if (_root == null)
                 return;
 
-            if (result == null || !result.HasSuggestions)
+            if (result == null || !result.HasHelper)
             {
                 Hide();
                 return;
             }
 
+            SyncFontsFromInput();
+            RepositionUnderInput();
+
             _visible = true;
             _root.SetActive(true);
+            _root.transform.SetAsLastSibling();
 
             SuggestionItem selected = result.Selected;
-            string structure = selected?.StructureHeader
-                               ?? result.StructureHeader
-                               ?? string.Empty;
-            _header.text = string.IsNullOrEmpty(structure)
-                ? string.Empty
-                : structure;
+            string structure = !string.IsNullOrEmpty(result.StructureHeader)
+                ? result.StructureHeader
+                : (selected?.StructureHeader ?? string.Empty);
+
+            if (selected != null && !string.IsNullOrEmpty(selected.StructureHeader))
+                structure = selected.StructureHeader;
+
+            _header.text = structure ?? string.Empty;
+            _header.gameObject.SetActive(!string.IsNullOrEmpty(_header.text));
 
             string helper = result.DescriptionHelper ?? string.Empty;
-            if (selected != null && !string.IsNullOrEmpty(selected.SourceLabel))
+            string source = selected?.SourceLabel;
+            if (string.IsNullOrEmpty(source))
+                source = result.SourceHelper;
+
+            if (!string.IsNullOrEmpty(source))
             {
-                string sourceLine = "Source: " + selected.SourceLabel;
-                helper = string.IsNullOrEmpty(helper)
-                    ? sourceLine
-                    : helper + "  ·  " + sourceLine;
+                string sourceLine = "Source: " + source;
+                helper = string.IsNullOrEmpty(helper) ? sourceLine : helper + "  ·  " + sourceLine;
             }
 
             _helper.text = helper;
             _helper.gameObject.SetActive(!string.IsNullOrEmpty(helper));
 
-            int count = Math.Min(result.Suggestions.Count, MaxRows);
+            int count = Math.Min(result.Suggestions?.Count ?? 0, MaxRows);
+            _rowsRoot.SetActive(count > 0);
             for (int i = 0; i < MaxRows; i++)
             {
                 if (i >= count)
@@ -170,17 +205,18 @@ namespace ConsoleAutocomplete.Autocomplete
                 string left = item.DisplayLeft ?? item.Value ?? string.Empty;
                 string right = item.SourceLabel ?? string.Empty;
 
-                var sb = new StringBuilder();
+                var sb = new StringBuilder(64);
                 if (isSelected)
                     sb.Append("<color=#FFD27F>");
-                sb.Append(left);
+                sb.Append(Escape(left));
                 if (isSelected)
                     sb.Append("</color>");
 
                 if (!string.IsNullOrEmpty(right))
                 {
-                    sb.Append(" <color=#9AA0A6>— ");
-                    sb.Append(right);
+                    bool isMod = !right.Equals(ModAttribution.VanillaLabel, StringComparison.OrdinalIgnoreCase);
+                    sb.Append(isMod ? " <color=#7DFFB2>— " : " <color=#8B93A0>— ");
+                    sb.Append(Escape(right));
                     sb.Append("</color>");
                 }
 
@@ -188,7 +224,133 @@ namespace ConsoleAutocomplete.Autocomplete
                 _rows[i].gameObject.SetActive(true);
             }
 
+            Canvas.ForceUpdateCanvases();
+            LayoutRebuilder.ForceRebuildLayoutImmediate(_rootRt);
+
+            ModLog.Debug(
+                "Overlay render header='"
+                + (_header.text ?? string.Empty)
+                + "' helper='"
+                + (_helper.text ?? string.Empty)
+                + "' rows="
+                + count
+                + "' pos="
+                + (_rootRt != null ? _rootRt.anchoredPosition.ToString() : "?"));
+
             UpdateGhost(result, inputText);
+        }
+
+        /// <summary>
+        /// Place the panel directly under the TMP input so it hangs into the game view
+        /// (console is a top bar — anchoring upward puts the UI off-screen).
+        /// </summary>
+        private void RepositionUnderInput()
+        {
+            if (_rootRt == null || _input == null)
+                return;
+
+            try
+            {
+                RectTransform inputRt = _input.transform as RectTransform;
+                RectTransform canvasRt = _rootRt.parent as RectTransform;
+                if (inputRt == null || canvasRt == null)
+                {
+                    ApplyTopBarFallback();
+                    return;
+                }
+
+                Camera eventCam = null;
+                if (_ui != null && _ui.canvas != null
+                    && _ui.canvas.renderMode != RenderMode.ScreenSpaceOverlay)
+                    eventCam = _ui.canvas.worldCamera;
+
+                Vector3[] corners = new Vector3[4];
+                inputRt.GetWorldCorners(corners);
+                // corners: 0=BL, 1=TL, 2=TR, 3=BR
+                Vector2 screenBL = RectTransformUtility.WorldToScreenPoint(eventCam, corners[0]);
+                Vector2 screenBR = RectTransformUtility.WorldToScreenPoint(eventCam, corners[3]);
+
+                if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(
+                        canvasRt, screenBL, eventCam, out Vector2 localBL)
+                    || !RectTransformUtility.ScreenPointToLocalPointInRectangle(
+                        canvasRt, screenBR, eventCam, out Vector2 localBR))
+                {
+                    ApplyTopBarFallback();
+                    return;
+                }
+
+                float width = Mathf.Abs(localBR.x - localBL.x);
+                if (width < 200f)
+                    width = Mathf.Max(420f, canvasRt.rect.width - 48f);
+
+                float centerX = (localBL.x + localBR.x) * 0.5f;
+                float topY = localBL.y - 6f; // a few px under the input
+
+                _rootRt.anchorMin = new Vector2(0.5f, 0.5f);
+                _rootRt.anchorMax = new Vector2(0.5f, 0.5f);
+                _rootRt.pivot = new Vector2(0.5f, 1f);
+                _rootRt.anchoredPosition = new Vector2(centerX, topY);
+                _rootRt.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, width);
+
+                ModLog.Debug(
+                    "Overlay under input anchored="
+                    + _rootRt.anchoredPosition
+                    + " w="
+                    + width.ToString("F0"));
+            }
+            catch (Exception ex)
+            {
+                ModLog.Warning("Overlay reposition failed: " + ex.Message);
+                ApplyTopBarFallback();
+            }
+        }
+
+        private void ApplyTopBarFallback()
+        {
+            if (_rootRt == null)
+                return;
+
+            // Fixed drop just under the top edge of the console canvas.
+            _rootRt.anchorMin = new Vector2(0f, 1f);
+            _rootRt.anchorMax = new Vector2(1f, 1f);
+            _rootRt.pivot = new Vector2(0.5f, 1f);
+            _rootRt.anchoredPosition = new Vector2(0f, -42f);
+            _rootRt.sizeDelta = new Vector2(-24f, _rootRt.sizeDelta.y);
+        }
+
+        private void SyncFontsFromInput()
+        {
+            TextMeshProUGUI source = ResolveInputText();
+            if (source == null || source.font == null)
+                return;
+
+            ApplyFont(_header, source);
+            ApplyFont(_helper, source);
+            for (int i = 0; i < _rows.Length; i++)
+                ApplyFont(_rows[i], source);
+        }
+
+        private static void ApplyFont(TextMeshProUGUI target, TextMeshProUGUI source)
+        {
+            if (target == null || source == null)
+                return;
+
+            target.font = source.font;
+            if (source.fontSharedMaterial != null)
+                target.fontSharedMaterial = source.fontSharedMaterial;
+            target.fontStyle = FontStyles.Normal;
+        }
+
+        private TextMeshProUGUI ResolveInputText()
+        {
+            if (_input == null || _input.textComponent == null)
+                return null;
+
+#if IL2CPP
+            return _input.textComponent.TryCast<TextMeshProUGUI>();
+#else
+            return _input.textComponent as TextMeshProUGUI;
+#endif
         }
 
         private void UpdateGhost(SuggestionEngine.Result result, string inputText)
@@ -205,28 +367,22 @@ namespace ConsoleAutocomplete.Autocomplete
             }
 
             string typed = inputText ?? string.Empty;
-            _ghost.text = "<color=#00000000>" + Escape(typed) + "</color><color=#888888>" + Escape(suffix) + "</color>";
+            _ghost.text = "<color=#00000000>" + Escape(typed) + "</color><color=#9A9A9A>" + Escape(suffix) + "</color>";
             _ghost.gameObject.SetActive(true);
             SyncGhostStyle();
         }
 
         private void SyncGhostStyle()
         {
-            TextMeshProUGUI source = null;
-            if (_input != null && _input.textComponent != null)
-            {
-#if IL2CPP
-                source = _input.textComponent.TryCast<TextMeshProUGUI>();
-#else
-                source = _input.textComponent as TextMeshProUGUI;
-#endif
-            }
-
+            TextMeshProUGUI source = ResolveInputText();
             if (_ghost == null || source == null)
                 return;
 
             _ghost.font = source.font;
+            if (source.fontSharedMaterial != null)
+                _ghost.fontSharedMaterial = source.fontSharedMaterial;
             _ghost.fontSize = source.fontSize;
+            _ghost.fontStyle = FontStyles.Normal;
             _ghost.alignment = source.alignment;
             _ghost.margin = source.margin;
             _ghost.characterSpacing = source.characterSpacing;
@@ -283,27 +439,39 @@ namespace ConsoleAutocomplete.Autocomplete
             }
         }
 
-        private static TextMeshProUGUI CreateText(Transform parent, string name, float size, FontStyles style)
+        private static TextMeshProUGUI CreateText(Transform parent, string name, float size)
         {
             GameObject go = new GameObject(name);
             go.transform.SetParent(parent, false);
             TextMeshProUGUI tmp = go.AddComponent<TextMeshProUGUI>();
             tmp.fontSize = size;
-            tmp.fontStyle = style;
+            tmp.fontStyle = FontStyles.Normal;
             tmp.color = Color.white;
             tmp.alignment = TextAlignmentOptions.Left;
+            tmp.richText = true;
 #if MONO
             tmp.textWrappingMode = TextWrappingModes.NoWrap;
 #else
             tmp.enableWordWrapping = false;
 #endif
-            tmp.overflowMode = TextOverflowModes.Ellipsis;
+            tmp.overflowMode = TextOverflowModes.Overflow;
             tmp.raycastTarget = false;
 
             LayoutElement le = go.AddComponent<LayoutElement>();
             le.minHeight = size + 6f;
             le.preferredHeight = size + 6f;
+            le.flexibleWidth = 1f;
             return tmp;
+        }
+
+        private static void SetFixedHeight(TextMeshProUGUI tmp, float height)
+        {
+            LayoutElement le = tmp != null ? tmp.GetComponent<LayoutElement>() : null;
+            if (le == null)
+                return;
+
+            le.minHeight = height;
+            le.preferredHeight = height;
         }
 
         private static string Escape(string value)

@@ -19,9 +19,14 @@ namespace ConsoleAutocomplete.Autocomplete
         private static SuggestionEngine.Result _current;
         private static int _selectedIndex;
         private static bool _suppressValueChanged;
+        private static bool _listenerWired;
+        private static ConsoleUI _wiredUi;
 
         internal static bool SuggestionsActive =>
             _overlay != null && _overlay.IsVisible && _current != null && _current.HasSuggestions;
+
+        internal static bool HelperActive =>
+            _overlay != null && _overlay.IsVisible && _current != null && _current.HasHelper;
 
         internal static bool IsBoundInput(TMP_InputField field) =>
             field != null && _overlay != null && _overlay.BoundInput == field;
@@ -32,17 +37,12 @@ namespace ConsoleAutocomplete.Autocomplete
         {
             try
             {
-                if (__instance?.InputField == null)
-                    return;
-
-                _overlay ??= new SuggestionOverlay();
-                _overlay.Attach(__instance);
-                __instance.InputField.onValueChanged.AddListener(
-                    UnityEvents.Action<string>(text => OnValueChanged(__instance, text)));
+                ModLog.Debug("ConsoleUI.Awake postfix.");
+                EnsureWired(__instance);
             }
             catch (Exception ex)
             {
-                ModLog.ErrorOnce("console-awake", "ConsoleUI Awake hook failed: " + ex.Message);
+                ModLog.ErrorOnce("console-awake", "ConsoleUI Awake hook failed: " + ex);
             }
         }
 
@@ -52,6 +52,11 @@ namespace ConsoleAutocomplete.Autocomplete
         {
             try
             {
+                ModLog.Debug("ConsoleUI.SetIsOpen(" + open + ").");
+
+                // Awake may have run before our patches on IL2CPP — wire on first open.
+                EnsureWired(__instance);
+
                 if (!open)
                 {
                     _overlay?.Hide();
@@ -61,12 +66,15 @@ namespace ConsoleAutocomplete.Autocomplete
                 }
 
                 UsageStats.EnsureLoadedForCurrentSave();
+                CommandIndex.MarkDirty();
                 CommandIndex.EnsureBuilt();
-                Refresh(__instance, __instance.InputField != null ? __instance.InputField.text : string.Empty);
+                Refresh(
+                    __instance,
+                    __instance.InputField != null ? __instance.InputField.text : string.Empty);
             }
             catch (Exception ex)
             {
-                ModLog.Warning("ConsoleUI SetIsOpen hook failed: " + ex.Message);
+                ModLog.Warning("ConsoleUI SetIsOpen hook failed: " + ex);
             }
         }
 
@@ -76,7 +84,7 @@ namespace ConsoleAutocomplete.Autocomplete
         {
             try
             {
-                if (__instance?.canvas == null || !__instance.canvas.enabled)
+                if (!IsConsoleCanvasEnabled(__instance))
                     return;
 
                 if (__instance.InputField == null)
@@ -109,7 +117,7 @@ namespace ConsoleAutocomplete.Autocomplete
             }
             catch (Exception ex)
             {
-                ModLog.ErrorOnce("console-update", "ConsoleUI Update hook failed: " + ex.Message);
+                ModLog.ErrorOnce("console-update", "ConsoleUI Update hook failed: " + ex);
             }
         }
 
@@ -120,11 +128,58 @@ namespace ConsoleAutocomplete.Autocomplete
             return !SuggestionsActive;
         }
 
+        private static void EnsureWired(ConsoleUI ui)
+        {
+            if (ui == null || ui.InputField == null)
+            {
+                ModLog.Debug("EnsureWired skipped: ui or InputField null.");
+                return;
+            }
+
+            _overlay ??= new SuggestionOverlay();
+            _overlay.Attach(ui);
+
+            if (_listenerWired && _wiredUi == ui)
+                return;
+
+            ui.InputField.onValueChanged.AddListener(
+                UnityEvents.Action<string>(text => OnValueChanged(ui, text)));
+            _listenerWired = true;
+            _wiredUi = ui;
+            ModLog.Debug("Wired onValueChanged + overlay to ConsoleUI.");
+        }
+
+        private static bool IsConsoleCanvasEnabled(ConsoleUI ui)
+        {
+            if (ui == null)
+                return false;
+
+            try
+            {
+                if (ui.canvas != null)
+                    return ui.canvas.enabled;
+            }
+            catch
+            {
+                // ignored
+            }
+
+            try
+            {
+                return ui.Container != null && ui.Container.activeInHierarchy;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         private static void OnValueChanged(ConsoleUI ui, string text)
         {
             if (_suppressValueChanged)
                 return;
 
+            ModLog.Debug("onValueChanged: '" + text + "'");
             _selectedIndex = 0;
             Refresh(ui, text);
         }
@@ -134,11 +189,23 @@ namespace ConsoleAutocomplete.Autocomplete
             if (ui?.InputField == null)
                 return;
 
+            EnsureWired(ui);
             CommandIndex.EnsureBuilt();
             int caret = ui.InputField.caretPosition;
             int selected = preserveSelection ? _selectedIndex : 0;
             _current = SuggestionEngine.Build(text, caret, selected);
             _selectedIndex = _current.SelectedIndex;
+
+            ModLog.Debug(
+                "Refresh suggestions="
+                + (_current.Suggestions?.Count ?? 0)
+                + " helper="
+                + _current.HasHelper
+                + " header='"
+                + _current.StructureHeader
+                + "' indexedCommands="
+                + CommandIndex.Commands.Count);
+
             _overlay?.Render(_current, text);
         }
 
@@ -148,6 +215,7 @@ namespace ConsoleAutocomplete.Autocomplete
                 return;
 
             string next = SuggestionEngine.ApplySelection(ui.InputField.text, _current);
+            ModLog.Debug("Tab apply → '" + next + "'");
             _suppressValueChanged = true;
             try
             {
@@ -214,7 +282,6 @@ namespace ConsoleAutocomplete.Autocomplete
             if (!ConsoleUIPatches.IsBoundInput(field))
                 return true;
 
-            // Block TMP caret navigation; ConsoleUIPatches owns Up/Down for suggestions.
             return false;
         }
     }
@@ -226,36 +293,58 @@ namespace ConsoleAutocomplete.Autocomplete
         [HarmonyPostfix]
         private static void ConsoleAwakePostfix()
         {
+            ModLog.Debug("Game Console.Awake — rebuilding command index.");
             CommandIndex.MarkDirty();
             CommandIndex.Rebuild();
         }
 
 #if MONO
         [HarmonyPatch(typeof(GameConsole), nameof(GameConsole.SubmitCommand), new Type[] { typeof(List<string>) })]
-        [HarmonyPostfix]
-        private static void SubmitCommandPostfixMono(List<string> args)
+        [HarmonyPrefix]
+        private static void SubmitCommandPrefixMono(List<string> args)
         {
-            RecordSubmit(args);
+            RecordSubmit(CopyTokens(args));
         }
 #else
         [HarmonyPatch(typeof(GameConsole), nameof(GameConsole.SubmitCommand), new Type[] { typeof(Il2CppSystem.Collections.Generic.List<string>) })]
-        [HarmonyPostfix]
-        private static void SubmitCommandPostfixIl2Cpp(Il2CppSystem.Collections.Generic.List<string> args)
+        [HarmonyPrefix]
+        private static void SubmitCommandPrefixIl2Cpp(Il2CppSystem.Collections.Generic.List<string> args)
+        {
+            RecordSubmit(CopyTokens(args));
+        }
+#endif
+
+        private static List<string> CopyTokens(object args)
         {
             var tokens = new List<string>();
-            if (args != null)
+            if (args == null)
+                return tokens;
+
+#if IL2CPP
+            if (args is Il2CppSystem.Collections.Generic.List<string> il2)
             {
-                for (int i = 0; i < args.Count; i++)
+                for (int i = 0; i < il2.Count; i++)
                 {
-                    string value = args[i];
+                    string value = il2[i];
+                    if (!string.IsNullOrWhiteSpace(value))
+                        tokens.Add(value.Trim().ToLowerInvariant());
+                }
+
+                return tokens;
+            }
+#endif
+            if (args is List<string> managed)
+            {
+                for (int i = 0; i < managed.Count; i++)
+                {
+                    string value = managed[i];
                     if (!string.IsNullOrWhiteSpace(value))
                         tokens.Add(value.Trim().ToLowerInvariant());
                 }
             }
 
-            RecordSubmit(tokens);
+            return tokens;
         }
-#endif
 
         private static void RecordSubmit(List<string> tokens)
         {
@@ -264,9 +353,9 @@ namespace ConsoleAutocomplete.Autocomplete
                 if (tokens == null || tokens.Count == 0)
                     return;
 
+                ModLog.Debug("SubmitCommand tokens: " + string.Join(" ", tokens));
                 UsageStats.EnsureLoadedForCurrentSave();
                 UsageStats.RecordCommandLine(tokens);
-                // Persisted on game Save (SaveManager), not on every console submit.
             }
             catch (Exception ex)
             {
@@ -292,6 +381,7 @@ namespace ConsoleAutocomplete.Autocomplete
                     source = "Mod";
 
                 ArgProviderRegistry.RememberItemSource(item.ID, source);
+                ModLog.Debug("Item source '" + item.ID + "' ← " + source);
             }
             catch (Exception ex)
             {
