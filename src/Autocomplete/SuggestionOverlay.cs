@@ -24,6 +24,8 @@ namespace ConsoleAutocomplete.Autocomplete
         private TMP_InputField _input;
         private ConsoleUI _ui;
         private bool _visible;
+        private int _scrollOffset;
+        private string _scrollKey = string.Empty;
 
         public bool IsVisible => _visible;
         public TMP_InputField BoundInput => _input;
@@ -138,6 +140,8 @@ namespace ConsoleAutocomplete.Autocomplete
         public void Hide()
         {
             _visible = false;
+            _scrollOffset = 0;
+            _scrollKey = string.Empty;
             if (_root != null)
                 _root.SetActive(false);
             if (_ghost != null)
@@ -190,18 +194,23 @@ namespace ConsoleAutocomplete.Autocomplete
             _helper.text = helper;
             _helper.gameObject.SetActive(!string.IsNullOrEmpty(helper));
 
-            int count = Math.Min(result.Suggestions?.Count ?? 0, MaxRows);
-            _rowsRoot.SetActive(count > 0);
-            for (int i = 0; i < MaxRows; i++)
+            int total = result.Suggestions?.Count ?? 0;
+            int selectedIndex = result.SelectedIndex;
+            UpdateScrollWindow(result, total, selectedIndex);
+
+            int visible = Math.Min(MaxRows, Math.Max(0, total - _scrollOffset));
+            _rowsRoot.SetActive(total > 0);
+            for (int row = 0; row < MaxRows; row++)
             {
-                if (i >= count)
+                int index = _scrollOffset + row;
+                if (row >= visible || index >= total)
                 {
-                    _rows[i].gameObject.SetActive(false);
+                    _rows[row].gameObject.SetActive(false);
                     continue;
                 }
 
-                SuggestionItem item = result.Suggestions[i];
-                bool isSelected = i == result.SelectedIndex;
+                SuggestionItem item = result.Suggestions[index];
+                bool isSelected = index == selectedIndex;
                 string left = item.DisplayLeft ?? item.Value ?? string.Empty;
                 string right = item.SourceLabel ?? string.Empty;
 
@@ -220,8 +229,14 @@ namespace ConsoleAutocomplete.Autocomplete
                     sb.Append("</color>");
                 }
 
-                _rows[i].text = sb.ToString();
-                _rows[i].gameObject.SetActive(true);
+                // Subtle cue when more rows exist above/below the window.
+                if (row == 0 && _scrollOffset > 0)
+                    sb.Insert(0, "<color=#6A7380>▲ </color>");
+                if (row == visible - 1 && _scrollOffset + visible < total)
+                    sb.Append(" <color=#6A7380>▼</color>");
+
+                _rows[row].text = sb.ToString();
+                _rows[row].gameObject.SetActive(true);
             }
 
             Canvas.ForceUpdateCanvases();
@@ -233,11 +248,50 @@ namespace ConsoleAutocomplete.Autocomplete
                 + "' helper='"
                 + (_helper.text ?? string.Empty)
                 + "' rows="
-                + count
+                + visible
+                + "/"
+                + total
+                + " scroll="
+                + _scrollOffset
+                + " sel="
+                + selectedIndex
                 + "' pos="
                 + (_rootRt != null ? _rootRt.anchoredPosition.ToString() : "?"));
 
             UpdateGhost(result, inputText);
+        }
+
+        private void UpdateScrollWindow(SuggestionEngine.Result result, int total, int selectedIndex)
+        {
+            string key = total + "|" + (result.CurrentToken ?? string.Empty) + "|" + (result.StructureHeader ?? string.Empty);
+            if (!string.Equals(key, _scrollKey, StringComparison.Ordinal))
+            {
+                _scrollKey = key;
+                _scrollOffset = 0;
+            }
+
+            if (total <= 0)
+            {
+                _scrollOffset = 0;
+                return;
+            }
+
+            int window = Math.Min(MaxRows, total);
+            if (selectedIndex < 0)
+                selectedIndex = 0;
+            if (selectedIndex >= total)
+                selectedIndex = total - 1;
+
+            if (selectedIndex < _scrollOffset)
+                _scrollOffset = selectedIndex;
+            else if (selectedIndex >= _scrollOffset + window)
+                _scrollOffset = selectedIndex - window + 1;
+
+            int maxOffset = Math.Max(0, total - window);
+            if (_scrollOffset < 0)
+                _scrollOffset = 0;
+            if (_scrollOffset > maxOffset)
+                _scrollOffset = maxOffset;
         }
 
         /// <summary>
