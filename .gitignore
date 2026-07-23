@@ -6,3 +6,16 @@ local.build.props
 s1interop-runs/
 s1interop-cache/
 artifacts/
+
+# Release binaries / zips (docs under releases/ stay tracked)
+releases/v*/Mods/
+releases/v*/Plugins/
+releases/v*/*.zip
+releases/v*/CHANGELOG.txt
+# Keep versioned README / nexus paste files if authors commit them:
+# releases/v*/README.txt
+# releases/v*/NEXUS_DESCRIPTION.md
+
+# Local tool / CI scratch
+release-notes.md
+nexus-upload.zip

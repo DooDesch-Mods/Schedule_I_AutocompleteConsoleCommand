@@ -1,0 +1,154 @@
+name: Publish stores
+
+# Runs when a GitHub Release is published (not drafts).
+# Uploads to Thunderstore and/or Nexus when secrets exist; otherwise skips.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish (e.g. v0.1.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Resolve tag / version
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="${{ github.event.release.tag_name }}"
+          fi
+          VERSION="${TAG#v}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Download release assets
+        id: assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.meta.outputs.tag }}"
+          mkdir -p "$RUNNER_TEMP/assets"
+          gh release download "$TAG" --dir "$RUNNER_TEMP/assets"
+          ls -la "$RUNNER_TEMP/assets"
+
+          NEXUS_ZIP="$(find "$RUNNER_TEMP/assets" -name 'ConsoleAutocomplete - v*.zip' | head -n1 || true)"
+          TS_ZIP="$(find "$RUNNER_TEMP/assets" -name 'Hiemdallh-ConsoleAutocomplete-*.zip' | head -n1 || true)"
+
+          if [[ -z "${NEXUS_ZIP}" && -z "${TS_ZIP}" ]]; then
+            echo "No release zips found. Attach Build-Release.ps1 outputs before publishing." >&2
+            exit 1
+          fi
+
+          {
+            echo "nexus_zip=${NEXUS_ZIP}"
+            echo "ts_zip=${TS_ZIP}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Publish to Thunderstore
+        env:
+          TCLI_AUTH_TOKEN: ${{ secrets.THUNDERSTORE_TOKEN }}
+          TSS_NAMESPACE: ${{ secrets.THUNDERSTORE_NAMESPACE }}
+          TS_ZIP: ${{ steps.assets.outputs.ts_zip }}
+          VERSION: ${{ steps.meta.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${TCLI_AUTH_TOKEN:-}" ]]; then
+            echo "Thunderstore skipped — set THUNDERSTORE_TOKEN secret."
+            exit 0
+          fi
+          if [[ -z "${TS_ZIP}" || ! -f "${TS_ZIP}" ]]; then
+            echo "Thunderstore zip missing on the release; skipped."
+            exit 0
+          fi
+
+          NS="${TSS_NAMESPACE:-Hiemdallh}"
+          CFG="$RUNNER_TEMP/thunderstore.toml"
+          sed "s/versionNumber = \".*\"/versionNumber = \"${VERSION}\"/" \
+            packaging/thunderstore/thunderstore.toml \
+            | sed "s/namespace = \".*\"/namespace = \"${NS}\"/" \
+            > "$CFG"
+
+          dotnet tool install --tool-path "$RUNNER_TEMP/tcli" tcli --version 0.2.4
+          export PATH="$RUNNER_TEMP/tcli:$PATH"
+
+          tcli publish \
+            --config-path "$CFG" \
+            --file "${TS_ZIP}" \
+            --token "${TCLI_AUTH_TOKEN}"
+
+          echo "Thunderstore upload submitted (${NS}-ConsoleAutocomplete-${VERSION})"
+
+      - name: Publish to Nexus Mods
+        env:
+          NX_KEY: ${{ secrets.NEXUSMODS_API_KEY }}
+          NX_FILE: ${{ secrets.NEXUSMODS_FILE_ID }}
+          NEXUS_ZIP: ${{ steps.assets.outputs.nexus_zip }}
+          VERSION: ${{ steps.meta.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${NX_KEY:-}" || -z "${NX_FILE:-}" ]]; then
+            echo "Nexus skipped — set NEXUSMODS_API_KEY and NEXUSMODS_FILE_ID (after first manual upload)."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ -z "${NEXUS_ZIP}" || ! -f "${NEXUS_ZIP}" ]]; then
+            echo "Nexus zip missing on the release; skipped."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          # Copy to a stable path for the upload action
+          cp "${NEXUS_ZIP}" "$GITHUB_WORKSPACE/nexus-upload.zip"
+          echo "Prepared nexus-upload.zip"
+        id: nexus_prep
+
+      - name: Upload file to Nexus Mods
+        if: ${{ steps.nexus_prep.outputs.skip == 'false' }}
+        uses: Nexus-Mods/upload-action@v2.0.0
+        with:
+          api_key: ${{ secrets.NEXUSMODS_API_KEY }}
+          file_id: ${{ secrets.NEXUSMODS_FILE_ID }}
+          filename: nexus-upload.zip
+          version: ${{ steps.meta.outputs.version }}
+          display_name: Console Autocomplete ${{ steps.meta.outputs.version }}
+          description: See the GitHub release / CHANGELOG for this version.
+          category: main
+          archive_existing_version: true
+          primary_mod_manager_download: true
+
+      - name: Summary
+        shell: bash
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## Store publish for \`${{ steps.meta.outputs.tag }}\`
+
+          - Thunderstore: runs when \`THUNDERSTORE_TOKEN\` is set
+          - Nexus: runs when \`NEXUSMODS_API_KEY\` + \`NEXUSMODS_FILE_ID\` are set
+
+          Docs: [RELEASING.md](../blob/master/docs/RELEASING.md)
+          EOF

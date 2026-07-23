@@ -1,0 +1,124 @@
+name: Release
+
+# Creates a draft GitHub Release from a version tag.
+# Build zips locally with Scripts/Build-Release.ps1 (game assemblies required),
+# then upload them to the draft and publish — see docs/RELEASING.md.
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version without v prefix (must match ModInfo), e.g. 0.1.0"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  draft-release:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            VERSION="${{ inputs.version }}"
+            VERSION="${VERSION#v}"
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          TAG="v${VERSION}"
+
+          MOD_VERSION="$(grep -oP 'ModVersion\s*=\s*"\K[^"]+' src/Constants/ModInfo.cs | head -n1)"
+          if [[ -z "$MOD_VERSION" ]]; then
+            echo "Could not parse ModVersion from ModInfo.cs" >&2
+            exit 1
+          fi
+          if [[ "$MOD_VERSION" != "$VERSION" ]]; then
+            echo "Tag/version $VERSION does not match ModInfo ModVersion $MOD_VERSION" >&2
+            echo "Bump src/Constants/ModInfo.cs before tagging." >&2
+            exit 1
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Resolved release $TAG (ModInfo=$MOD_VERSION)"
+
+      - name: Extract changelog section
+        id: notes
+        shell: bash
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          export NOTES_FILE="$GITHUB_WORKSPACE/release-notes.md"
+          python3 <<'PY'
+          import os, re, pathlib
+          version = os.environ["VERSION"]
+          out = pathlib.Path(os.environ["NOTES_FILE"])
+          text = pathlib.Path("CHANGELOG.md").read_text(encoding="utf-8")
+          pat = rf"(?ms)^##\s*\[?{re.escape(version)}\]?[^\n]*\n(.*?)(?=^##\s|\Z)"
+          m = re.search(pat, text)
+          body = m.group(1).strip() if m else ""
+          if not body:
+              body = (
+                  f"_No CHANGELOG.md section found for {version}. "
+                  f"See docs/RELEASING.md._"
+              )
+          header = (
+              f"# Console Autocomplete {version}\n\n"
+              f"MelonLoader mod for Schedule I — live console autocomplete.\n\n"
+              f"## Install\n\n"
+              f"1. Download **ConsoleAutocomplete - v{version}.zip** from this release\n"
+              f"2. Copy `Plugins/` and `Mods/` into your Schedule I folder\n"
+              f"3. Launch the game (loader picks IL2CPP vs Mono)\n"
+              f"4. Open the console and type — panel appears under the input bar\n\n"
+              f"Thunderstore users: prefer **Hiemdallh-ConsoleAutocomplete-{version}.zip** "
+              f"or the Thunderstore package once published.\n\n"
+              f"---\n\n"
+          )
+          out.write_text(header + body + "\n", encoding="utf-8")
+          print(f"Wrote {out} ({out.stat().st_size} bytes)")
+          PY
+
+      - name: Create draft GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: Console Autocomplete ${{ steps.meta.outputs.version }}
+          body_path: release-notes.md
+          draft: true
+          prerelease: false
+          fail_on_unmatched_files: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Summary
+        shell: bash
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## Draft release \`${{ steps.meta.outputs.tag }}\`
+
+          1. Locally run \`Scripts/Build-Release.ps1\`
+          2. Upload both zips from \`releases/v${{ steps.meta.outputs.version }}/\`:
+             - \`ConsoleAutocomplete - v${{ steps.meta.outputs.version }}.zip\` (Nexus / manual)
+             - \`Hiemdallh-ConsoleAutocomplete-${{ steps.meta.outputs.version }}.zip\` (Thunderstore)
+          3. Publish the draft release on GitHub
+          4. If store secrets are configured, **Publish stores** runs automatically
+
+          See [docs/RELEASING.md](../blob/master/docs/RELEASING.md).
+          EOF

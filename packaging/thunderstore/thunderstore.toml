@@ -1,0 +1,23 @@
+# Used by CI (tcli publish) and as documentation for the Thunderstore package identity.
+# Version is overridden at publish time via the prebuilt zip's manifest.json.
+
+[config]
+schemaVersion = "0.0.1"
+
+[package]
+namespace = "Hiemdallh"
+name = "ConsoleAutocomplete"
+versionNumber = "0.1.0"
+description = "Live console autocomplete for Schedule I — suggestions, Tab complete, structure helper, mod source labels."
+websiteUrl = "https://github.com/shreyas1996/Schedule_I_AutocompleteConsoleCommand"
+containsNsfwContent = false
+
+[package.dependencies]
+LavaGang-MelonLoader = "0.7.3"
+
+[publish]
+repository = "https://thunderstore.io"
+communities = ["schedule-i"]
+
+[publish.categories]
+schedule-i = ["mods"]
