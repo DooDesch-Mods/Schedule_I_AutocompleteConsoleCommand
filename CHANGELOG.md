@@ -31,6 +31,10 @@ When cutting a release:
 
 - Overlay positioning fell back to a fixed offset on IL2CPP because `Transform as RectTransform`
   returns null for interop wrappers; it now resolves the rect via `GetComponent`
+- Overlay geometry read all-zero corners on IL2CPP: `GetWorldCorners(Vector3[])` copies the array
+  into interop memory and never writes back, so the panel docked off the bottom of the screen.
+  Corners now come from `TransformPoint`, and a degenerate or off-screen result keeps the fallback
+  drop instead of hiding the panel
 
 ## [0.1.0] - 2026-07-23
 

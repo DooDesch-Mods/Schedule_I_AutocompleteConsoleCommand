@@ -448,6 +448,7 @@ namespace ConsoleAutocomplete.Autocomplete
                 Vector2 dockMin = inputMin;
                 Vector2 dockMax = inputMax;
                 int innerPadding = DefaultInnerPadding;
+                bool usedBar = false;
 
                 RectTransform barRt = AsRect(_ui != null && _ui.Container != null ? _ui.Container.transform : null);
                 if (barRt != null
@@ -456,6 +457,7 @@ namespace ConsoleAutocomplete.Autocomplete
                 {
                     dockMin = barMin;
                     dockMax = barMax;
+                    usedBar = true;
                     // The gap that used to sit outside the panel becomes padding inside it.
                     innerPadding = Mathf.Clamp(
                         Mathf.RoundToInt(inputMin.x - barMin.x),
@@ -468,10 +470,29 @@ namespace ConsoleAutocomplete.Autocomplete
                 {
                     width = Mathf.Max(420f, canvasRt.rect.width - 48f);
                     innerPadding = DefaultInnerPadding;
+                    usedBar = false;
                 }
 
                 float centerX = (dockMin.x + dockMax.x) * 0.5f;
                 float topY = dockMin.y; // flush against the bar, no outside gap
+
+                // A projection that lands outside the parent would hide the panel; the fixed
+                // fallback drop is always on screen, so prefer it over a silent disappearance.
+                Rect parentRect = canvasRt.rect;
+                if (topY <= parentRect.yMin + 1f
+                    || topY > parentRect.yMax + 1f
+                    || centerX < parentRect.xMin - 1f
+                    || centerX > parentRect.xMax + 1f)
+                {
+                    ModLog.Warning(
+                        "Overlay dock target off screen (center="
+                        + centerX.ToString("F0")
+                        + " top="
+                        + topY.ToString("F0")
+                        + "), using fallback.");
+                    ApplyTopBarFallback();
+                    return;
+                }
 
                 _rootRt.anchorMin = new Vector2(0.5f, 0.5f);
                 _rootRt.anchorMax = new Vector2(0.5f, 0.5f);
@@ -486,7 +507,14 @@ namespace ConsoleAutocomplete.Autocomplete
                     + " w="
                     + width.ToString("F0")
                     + " pad="
-                    + innerPadding);
+                    + innerPadding
+                    + " bar="
+                    + usedBar
+                    + " input=["
+                    + inputMin.ToString("F0")
+                    + ".."
+                    + inputMax.ToString("F0")
+                    + "]");
             }
             catch (Exception ex)
             {
@@ -536,6 +564,10 @@ namespace ConsoleAutocomplete.Autocomplete
 
         /// <summary>
         /// Projects a rect's bottom-left and top-right corner into the overlay's parent space.
+        /// Corners come from <see cref="Transform.TransformPoint(Vector3)"/> rather than
+        /// <c>GetWorldCorners</c>: under IL2CPP the array argument is copied into interop memory and
+        /// never written back, so the managed array stays all-zero and the panel lands off-screen.
+        /// Returns false for a degenerate rect (layout not built yet) so callers keep their fallback.
         /// </summary>
         private static bool TryGetLocalEdges(
             RectTransform target,
@@ -547,11 +579,12 @@ namespace ConsoleAutocomplete.Autocomplete
             min = Vector2.zero;
             max = Vector2.zero;
 
-            Vector3[] corners = new Vector3[4];
-            target.GetWorldCorners(corners);
-            // corners: 0=BL, 1=TL, 2=TR, 3=BR
-            Vector2 screenBL = RectTransformUtility.WorldToScreenPoint(eventCam, corners[0]);
-            Vector2 screenTR = RectTransformUtility.WorldToScreenPoint(eventCam, corners[2]);
+            Rect rect = target.rect;
+            Vector3 worldBL = target.TransformPoint(new Vector3(rect.xMin, rect.yMin, 0f));
+            Vector3 worldTR = target.TransformPoint(new Vector3(rect.xMax, rect.yMax, 0f));
+
+            Vector2 screenBL = RectTransformUtility.WorldToScreenPoint(eventCam, worldBL);
+            Vector2 screenTR = RectTransformUtility.WorldToScreenPoint(eventCam, worldTR);
 
             if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(space, screenBL, eventCam, out Vector2 localBL)
                 || !RectTransformUtility.ScreenPointToLocalPointInRectangle(space, screenTR, eventCam, out Vector2 localTR))
@@ -559,7 +592,7 @@ namespace ConsoleAutocomplete.Autocomplete
 
             min = new Vector2(Mathf.Min(localBL.x, localTR.x), Mathf.Min(localBL.y, localTR.y));
             max = new Vector2(Mathf.Max(localBL.x, localTR.x), Mathf.Max(localBL.y, localTR.y));
-            return true;
+            return max.x - min.x >= 1f && max.y - min.y >= 1f;
         }
 
         /// <summary>
