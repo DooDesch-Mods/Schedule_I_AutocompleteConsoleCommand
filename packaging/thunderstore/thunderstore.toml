@@ -8,7 +8,7 @@ schemaVersion = "0.0.1"
 namespace = "Hiemdallh"
 name = "ConsoleAutocomplete"
 versionNumber = "0.1.0"
-description = "Live console autocomplete for Schedule I — suggestions, Tab complete, structure helper, mod source labels."
+description = "Live console autocomplete for Schedule I - suggestions, Tab complete, structure helper, mod source labels."
 websiteUrl = "https://github.com/shreyas1996/Schedule_I_AutocompleteConsoleCommand"
 containsNsfwContent = false
 

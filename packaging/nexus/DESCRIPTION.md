@@ -33,7 +33,7 @@ Schedule I/
 ## How to use
 
 1. Open the console.  
-2. Type — e.g. `give tom` or `spawnvehicle `.  
+2. Type - e.g. `give tom` or `spawnvehicle `.  
 3. Use **Tab** to apply, **Up/Down** to change selection.
 
 You should see a dark panel **below** the console strip with the structure line, a source line, and suggestions.

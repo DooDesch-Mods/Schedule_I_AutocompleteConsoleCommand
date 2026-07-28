@@ -2,7 +2,7 @@
 
 This repo follows the same *shape* as Legal Produce’s local packaging (`Scripts/Build-Release.ps1` → `releases/v<version>/`), plus GitHub Actions for release notes and optional store uploads.
 
-Legal Produce does **not** have Thunderstore/Nexus CI yet — treat this Autocomplete pipeline as the template to copy later.
+Legal Produce does **not** have Thunderstore/Nexus CI yet - treat this Autocomplete pipeline as the template to copy later.
 
 ## One-time setup
 
@@ -56,7 +56,7 @@ Outputs under `releases/vX.Y.Z/`:
 | `README.txt` / `CHANGELOG.txt` | Player-facing copy inside the zip |
 | `NEXUS_DESCRIPTION.md` | Paste into Nexus description if needed |
 
-4. **Commit** changelog + version bump (do **not** commit `Mods/*.dll` or `*.zip` — gitignored).
+4. **Commit** changelog + version bump (do **not** commit `Mods/*.dll` or `*.zip` - gitignored).
 5. **Tag and push**:
 
 ```powershell

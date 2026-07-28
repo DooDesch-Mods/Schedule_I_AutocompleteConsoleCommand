@@ -26,7 +26,7 @@ namespace ConsoleAutocomplete.Util
             if (list == null)
                 yield break;
 
-            // Prefer Count + Item reflection — works for both Mono List and Il2Cpp List`1.
+            // Prefer Count + Item reflection - works for both Mono List and Il2Cpp List`1.
             if (TryGetCountAndIndexer(list, out int count, out PropertyInfo itemProp))
             {
                 for (int i = 0; i < count; i++)

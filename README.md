@@ -7,7 +7,7 @@ MelonLoader mod that adds live autocomplete to the in-game developer console.
 - Live suggestions, gray ghost text, Tab complete
 - Up/Down navigates suggestions (history when the panel is closed)
 - Structure helper header (`give <item> [quantity]`) + description / source line
-- Rows show `suggestion — Mod Name vX.Y.Z` (or Vanilla)
+- Rows show `suggestion - Mod Name vX.Y.Z` (or Vanilla)
 - Arg providers keep suggestions relevant (`spawnvehicle` → vehicles, `give` → items, …)
 - Per-save usage stats under `{save}/Modded/ConsoleAutocomplete/usage_stats.json`
 
@@ -22,7 +22,7 @@ Schedule I/
   Mods/ConsoleAutocomplete.dll            # Mono branch
 ```
 
-Open the console and type — a panel appears **under** the input bar.
+Open the console and type - a panel appears **under** the input bar.
 
 ## Dev build
 

@@ -32,7 +32,7 @@ namespace ConsoleAutocomplete.Autocomplete.ArgProviders
             // setdiscovered → product definitions only
             _providers.Add(new TypedItemArgProvider("setdiscovered", 0, ItemKind.Product));
 
-            // packageproduct → packaging definitions only (jar, baggie, …) — not acid/etc.
+            // packageproduct → packaging definitions only (jar, baggie, …) - not acid/etc.
             _providers.Add(new TypedItemArgProvider("packageproduct", 0, ItemKind.Packaging));
 
             _providers.Add(new TeleportArgProvider());
@@ -146,7 +146,7 @@ namespace ConsoleAutocomplete.Autocomplete.ArgProviders
                 // ignored
             }
 
-            // Prefer Il2Cpp runtime type — managed GetType() often reports the List`1 element
+            // Prefer Il2Cpp runtime type - managed GetType() often reports the List`1 element
             // proxy (ItemDefinition) even when the native object is PackagingDefinition.
             try
             {
@@ -231,7 +231,7 @@ namespace ConsoleAutocomplete.Autocomplete.ArgProviders
         Product
     }
 
-    /// <summary>All registry items (except cash) — used by give.</summary>
+    /// <summary>All registry items (except cash) - used by give.</summary>
     internal sealed class ItemArgProvider : IArgProvider
     {
         public ItemArgProvider(string commandWord, int argIndex)
@@ -337,7 +337,7 @@ namespace ConsoleAutocomplete.Autocomplete.ArgProviders
                 ModLog.Debug(
                     "Packaging filter matched 0 / "
                     + scanned
-                    + " items — seeding jar/baggie fallbacks.");
+                    + " items - seeding jar/baggie fallbacks.");
 
                 string[] fallbacks = { "jar", "baggie" };
                 for (int i = 0; i < fallbacks.Length; i++)

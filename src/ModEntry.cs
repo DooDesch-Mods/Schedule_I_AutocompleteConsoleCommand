@@ -27,7 +27,7 @@ namespace ConsoleAutocomplete
             ModLog.Info(
                 "Console Autocomplete loaded ("
                 + ModInfo.ModVersion
-                + ") [DEBUG — watch Melon log for [dbg] lines].");
+                + ") [DEBUG - watch Melon log for [dbg] lines].");
 #else
             ModLog.Info("Console Autocomplete loaded (" + ModInfo.ModVersion + ").");
 #endif

@@ -1,4 +1,4 @@
-# S1API Integration Analysis — Console Autocomplete
+# S1API Integration Analysis - Console Autocomplete
 
 **Status:** Research / proposal only (no implementation in this repo yet)  
 **Audience:** Future PR to [ifBars/S1API](https://github.com/ifBars/S1API) + maintainers of this mod  
@@ -11,7 +11,7 @@
 
 **Desired end state (as requested):**
 
-> Anyone who has **S1API** installed gets console autocomplete “for free,” whether or not other mods currently use S1API — i.e. shipping autocomplete *with* S1API (or as a tightly coupled default feature) so the Mods/Plugins layout of S1API enables it automatically.
+> Anyone who has **S1API** installed gets console autocomplete “for free,” whether or not other mods currently use S1API - i.e. shipping autocomplete *with* S1API (or as a tightly coupled default feature) so the Mods/Plugins layout of S1API enables it automatically.
 
 **Secondary goals:**
 
@@ -44,7 +44,7 @@
 | Native list | Custom commands are **intentionally not** added to `Console.Commands` (avoids subclassing Il2Cpp abstracts) |
 | Public surface | `BaseConsoleCommand`, `ConsoleHelper`; registry is **`internal`** |
 
-This is deliberate and good for S1API’s abstraction goals — but it means any autocomplete that only reads `Console.Commands` will miss every S1API command (MultiDelivery, etc.).
+This is deliberate and good for S1API’s abstraction goals - but it means any autocomplete that only reads `Console.Commands` will miss every S1API command (MultiDelivery, etc.).
 
 ### 2.3 Packaging reality
 
@@ -59,7 +59,7 @@ Autocomplete today is a **separate** MelonMod. “Just having S1API” does **no
 
 ## 3. Options for “default with S1API”
 
-### Option A — Embed full autocomplete UI inside S1API
+### Option A - Embed full autocomplete UI inside S1API
 
 Ship ConsoleUI Harmony + overlay + suggestion engine as part of the S1API MelonMod.
 
@@ -73,7 +73,7 @@ Ship ConsoleUI Harmony + overlay + suggestion engine as part of the S1API MelonM
 
 **Fit with S1API standards:** Poor as a first PR. Maintainers may reject scope.
 
-### Option B — S1API exposes metadata + arg-provider API; UI stays a separate mod (recommended foundation)
+### Option B - S1API exposes metadata + arg-provider API; UI stays a separate mod (recommended foundation)
 
 S1API gains a **small public console catalog / provider API**. Autocomplete (this mod, or a thin “S1API.ConsoleUX” package) consumes it.
 
@@ -86,7 +86,7 @@ S1API gains a **small public console catalog / provider API**. Autocomplete (thi
 
 **Fit:** Excellent for an initial PR.
 
-### Option C — Hybrid: API in S1API + optional bundled UX package (best match to the user’s “default feature” ask)
+### Option C - Hybrid: API in S1API + optional bundled UX package (best match to the user’s “default feature” ask)
 
 1. Land **Option B** APIs in S1API.  
 2. Either:
@@ -101,7 +101,7 @@ S1API gains a **small public console catalog / provider API**. Autocomplete (thi
 
 **Fit:** Best long-term product story; propose **after** Option B lands or as a follow-up PR series.
 
-### Option D — Inject S1API commands into native `Console.Commands`
+### Option D - Inject S1API commands into native `Console.Commands`
 
 Register Il2Cpp/`RegisterTypeInIl2Cpp` shells (like CommandProbe) into the game list.
 
@@ -123,12 +123,12 @@ Register Il2Cpp/`RegisterTypeInIl2Cpp` shells (like CommandProbe) into the game 
    - Optional reflection soft-hook into `CustomConsoleRegistry` if S1API assembly is present (fragile; stopgap only).  
    - Prefer waiting for a public API.
 
-2. **S1API PR #1 (API-only, high chance of merge)** — Option B  
+2. **S1API PR #1 (API-only, high chance of merge)** - Option B  
    - Public read-only command catalog.  
    - Optional arg-provider / structure metadata.  
    - Zero ConsoleUI code.
 
-3. **S1API PR #2 / release packaging (Option C)** — discuss with ifBars first  
+3. **S1API PR #2 / release packaging (Option C)** - discuss with ifBars first  
    - Bundle or sibling-ship autocomplete UX so S1API installs enable it by default.  
    - Keep UX code in a dedicated project under the S1API solution (or this repo as a submodule / NuGet consumed by S1API packaging).
 
@@ -218,11 +218,11 @@ Those remain in Internal (if ever) or in the UX assembly.
 
 ## 6. Improvements we should make in Console Autocomplete *before* / *for* an S1API PR
 
-Independent of merge politics — harden this mod so an upstream handoff is cleaner:
+Independent of merge politics - harden this mod so an upstream handoff is cleaner:
 
 | Area | Why |
 |------|-----|
-| **Split “engine” vs “UI”** | `SuggestionEngine`, command index, arg providers vs `SuggestionOverlay` / ConsoleUI patches — engine can later call S1API catalog |
+| **Split “engine” vs “UI”** | `SuggestionEngine`, command index, arg providers vs `SuggestionOverlay` / ConsoleUI patches - engine can later call S1API catalog |
 | **Pluggable command sources** | `ICommandSource` (NativeCommands, S1ApiCommands, …) instead of only `CommandIndex` → game list |
 | **Pluggable arg providers already exist** | Keep managed-only candidate DTOs; move game-specific providers behind adapters |
 | **Soft S1API reference** | Detect `S1API` assembly; use catalog API when version ≥ X; no hard compile dependency required for players without S1API |
@@ -280,10 +280,10 @@ Thunderstore: if bundled, declare `ifBars-S1API_Forked-x.y.z` as dependency of t
 
 1. **Product scope:** Is console UX in-scope for S1API, or should it stay a sister mod with a hard recommendation?  
 2. **Default-on:** If bundled, can players disable autocomplete via MelonPreferences without removing S1API?  
-3. **BepInEx builds:** S1API also has BepInEx configs — does autocomplete need those targets or Melon-only?  
+3. **BepInEx builds:** S1API also has BepInEx configs - does autocomplete need those targets or Melon-only?  
 4. **Performance:** Catalog is tiny; arg providers that scan full item registries should stay lazy / cached (lesson from this mod).  
 5. **CommandListScreen vs live console:** Catalog helps both; UI work is ConsoleUI-only.  
-6. **Ownership:** Who maintains overlay bugs after merge — S1API maintainers or Autocomplete authors as CODEOWNERS of a subproject?
+6. **Ownership:** Who maintains overlay bugs after merge - S1API maintainers or Autocomplete authors as CODEOWNERS of a subproject?
 
 ---
 

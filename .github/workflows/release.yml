@@ -2,7 +2,7 @@ name: Release
 
 # Creates a draft GitHub Release from a version tag.
 # Build zips locally with Scripts/Build-Release.ps1 (game assemblies required),
-# then upload them to the draft and publish — see docs/RELEASING.md.
+# then upload them to the draft and publish - see docs/RELEASING.md.
 
 on:
   push:
@@ -81,12 +81,12 @@ jobs:
               )
           header = (
               f"# Console Autocomplete {version}\n\n"
-              f"MelonLoader mod for Schedule I — live console autocomplete.\n\n"
+              f"MelonLoader mod for Schedule I - live console autocomplete.\n\n"
               f"## Install\n\n"
               f"1. Download **ConsoleAutocomplete - v{version}.zip** from this release\n"
               f"2. Copy `Plugins/` and `Mods/` into your Schedule I folder\n"
               f"3. Launch the game (loader picks IL2CPP vs Mono)\n"
-              f"4. Open the console and type — panel appears under the input bar\n\n"
+              f"4. Open the console and type - panel appears under the input bar\n\n"
               f"Thunderstore users: prefer **Hiemdallh-ConsoleAutocomplete-{version}.zip** "
               f"or the Thunderstore package once published.\n\n"
               f"---\n\n"

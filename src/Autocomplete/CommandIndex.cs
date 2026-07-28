@@ -53,7 +53,7 @@ namespace ConsoleAutocomplete.Autocomplete
             _dirty = false;
             ModLog.Debug("Command index rebuilt: " + _commands.Count + " commands.");
             if (_commands.Count == 0)
-                ModLog.Warning("Command index is empty — autocomplete will have no command suggestions.");
+                ModLog.Warning("Command index is empty - autocomplete will have no command suggestions.");
         }
 
         public static bool TryGet(string word, out CommandEntry entry)

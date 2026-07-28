@@ -15,7 +15,7 @@ Live **developer console autocomplete** for [Schedule I](https://store.steampowe
 
 1. Install this package (pulls in MelonLoader if needed)
 2. Launch Schedule I
-3. Open the console and type — a panel appears **under** the input bar
+3. Open the console and type - a panel appears **under** the input bar
 
 Manual layout inside the package:
 
@@ -30,7 +30,7 @@ The loader enables the correct DLL for IL2CPP vs Mono.
 | You type | You should see |
 |----------|----------------|
 | `gi` | `give` (and similar) with structure `give <item> [quantity]` |
-| `give tom` | Items like `tomato` / `tomato_seed` — mod crops show their mod name |
+| `give tom` | Items like `tomato` / `tomato_seed` - mod crops show their mod name |
 | `spawnvehicle ` | Vehicle ids |
 | Tab | Completes the highlighted suggestion |
 
