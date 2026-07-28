@@ -117,17 +117,20 @@ namespace ConsoleAutocomplete.Autocomplete
             }
         }
 
-        public static List<SuggestionItem> RankCommands(IEnumerable<SuggestionItem> items)
+        public static List<SuggestionItem> RankCommands(IEnumerable<SuggestionItem> items, string query = null)
         {
             EnsureLoadedForCurrentSave();
             List<SuggestionItem> list = items?.ToList() ?? new List<SuggestionItem>();
             foreach (SuggestionItem item in list)
                 item.UsageCount = GetCommandCount(item.Value);
 
-            return RankByUsageThenAlpha(list);
+            return RankByMatchThenUsage(list, !string.IsNullOrEmpty(query));
         }
 
-        public static List<SuggestionItem> RankArgs(string commandWord, IEnumerable<SuggestionItem> items)
+        public static List<SuggestionItem> RankArgs(
+            string commandWord,
+            IEnumerable<SuggestionItem> items,
+            string query = null)
         {
             EnsureLoadedForCurrentSave();
             string cmd = commandWord ?? string.Empty;
@@ -135,19 +138,31 @@ namespace ConsoleAutocomplete.Autocomplete
             foreach (SuggestionItem item in list)
                 item.UsageCount = GetArgCount(cmd, item.Value);
 
-            return RankByUsageThenAlpha(list);
+            return RankByMatchThenUsage(list, !string.IsNullOrEmpty(query));
         }
 
-        private static List<SuggestionItem> RankByUsageThenAlpha(List<SuggestionItem> list)
+        /// <summary>
+        /// Match quality first, usage stats inside a quality band. An exact or prefix hit therefore
+        /// never ends up below a heavily used substring hit.
+        /// </summary>
+        private static List<SuggestionItem> RankByMatchThenUsage(List<SuggestionItem> list, bool preferShorter)
+        {
+            var result = new List<SuggestionItem>(list.Count);
+            foreach (IGrouping<MatchKind, SuggestionItem> band in list
+                .GroupBy(i => i.MatchKind)
+                .OrderByDescending(g => g.Key))
+            {
+                result.AddRange(RankByUsageThenAlpha(band.ToList(), preferShorter));
+            }
+
+            return result;
+        }
+
+        private static List<SuggestionItem> RankByUsageThenAlpha(List<SuggestionItem> list, bool preferShorter)
         {
             bool anyStats = list.Any(i => i.UsageCount > 0);
             if (!anyStats)
-            {
-                return list
-                    .OrderBy(i => i.DisplayLeft ?? i.Value, StringComparer.OrdinalIgnoreCase)
-                    .ThenBy(i => i.SourceLabel, StringComparer.OrdinalIgnoreCase)
-                    .ToList();
-            }
+                return OrderByRelevance(list, preferShorter);
 
             List<SuggestionItem> top = list
                 .Where(i => i.UsageCount > 0)
@@ -157,16 +172,31 @@ namespace ConsoleAutocomplete.Autocomplete
                 .ToList();
 
             var topSet = new HashSet<SuggestionItem>(top);
-            List<SuggestionItem> rest = list
-                .Where(i => !topSet.Contains(i))
-                .OrderBy(i => i.DisplayLeft ?? i.Value, StringComparer.OrdinalIgnoreCase)
-                .ThenBy(i => i.SourceLabel, StringComparer.OrdinalIgnoreCase)
-                .ToList();
+            List<SuggestionItem> rest = OrderByRelevance(list.Where(i => !topSet.Contains(i)), preferShorter);
 
             var result = new List<SuggestionItem>(top.Count + rest.Count);
             result.AddRange(top);
             result.AddRange(rest);
             return result;
+        }
+
+        /// <summary>
+        /// Earliest match first (`fertilizer` beats `long_life_fertilizer` in the same band), then the
+        /// shorter value, then alphabetically. With nothing typed the list is a plain browse list, so
+        /// length is left out and it stays alphabetical.
+        /// </summary>
+        private static List<SuggestionItem> OrderByRelevance(
+            IEnumerable<SuggestionItem> items,
+            bool preferShorter)
+        {
+            IOrderedEnumerable<SuggestionItem> ordered = items.OrderBy(i => i.MatchOffset);
+            if (preferShorter)
+                ordered = ordered.ThenBy(i => (i.DisplayLeft ?? i.Value ?? string.Empty).Length);
+
+            return ordered
+                .ThenBy(i => i.DisplayLeft ?? i.Value, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(i => i.SourceLabel, StringComparer.OrdinalIgnoreCase)
+                .ToList();
         }
 
         private static void Bump(Dictionary<string, int> map, string key)

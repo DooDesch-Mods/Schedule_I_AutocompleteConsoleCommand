@@ -212,7 +212,9 @@ namespace ConsoleAutocomplete.Autocomplete
                 + _current.HasHelper
                 + " header='"
                 + _current.StructureHeader
-                + "' indexedCommands="
+                + "' match="
+                + (_current.Selected != null ? _current.Selected.MatchKind.ToString() : "-")
+                + " indexedCommands="
                 + CommandIndex.Commands.Count);
 
             _overlay?.Render(_current, text);

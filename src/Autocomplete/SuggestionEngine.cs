@@ -58,18 +58,20 @@ namespace ConsoleAutocomplete.Autocomplete
                 // Completing command word.
                 string prefix = token;
                 var suggestions = new List<SuggestionItem>();
-                foreach (CommandEntry entry in CommandIndex.FindPrefix(prefix))
+                foreach (CommandMatch hit in CommandIndex.FindMatches(prefix))
                 {
                     suggestions.Add(new SuggestionItem
                     {
-                        Value = entry.Word,
-                        DisplayLeft = entry.Word,
-                        SourceLabel = entry.SourceLabel,
-                        StructureHeader = entry.StructureHeader
+                        Value = hit.Entry.Word,
+                        DisplayLeft = hit.Entry.Word,
+                        SourceLabel = hit.Entry.SourceLabel,
+                        StructureHeader = hit.Entry.StructureHeader,
+                        MatchKind = hit.Match.Kind,
+                        MatchOffset = hit.Match.Offset
                     });
                 }
 
-                result.Suggestions = UsageStats.RankCommands(suggestions);
+                result.Suggestions = UsageStats.RankCommands(suggestions, prefix);
                 result.SelectedIndex = ClampIndex(selectedIndex, result.Suggestions.Count);
                 if (result.Selected != null)
                 {
@@ -101,7 +103,8 @@ namespace ConsoleAutocomplete.Autocomplete
             {
                 foreach (ArgCandidate candidate in candidates)
                 {
-                    if (!candidate.Value.StartsWith(argPrefix, StringComparison.OrdinalIgnoreCase))
+                    MatchResult match = FuzzyMatcher.Match(candidate.Value, argPrefix);
+                    if (!match.IsMatch)
                         continue;
 
                     argSuggestions.Add(new SuggestionItem
@@ -109,7 +112,9 @@ namespace ConsoleAutocomplete.Autocomplete
                         Value = candidate.Value,
                         DisplayLeft = candidate.Value,
                         SourceLabel = candidate.SourceLabel,
-                        StructureHeader = result.StructureHeader
+                        StructureHeader = result.StructureHeader,
+                        MatchKind = match.Kind,
+                        MatchOffset = match.Offset
                     });
                 }
             }
@@ -122,7 +127,8 @@ namespace ConsoleAutocomplete.Autocomplete
             {
                 foreach (string sample in ExtractExampleTokens(command.ExampleUsage, argIndex))
                 {
-                    if (!sample.StartsWith(argPrefix, StringComparison.OrdinalIgnoreCase))
+                    MatchResult match = FuzzyMatcher.Match(sample, argPrefix);
+                    if (!match.IsMatch)
                         continue;
 
                     argSuggestions.Add(new SuggestionItem
@@ -130,12 +136,14 @@ namespace ConsoleAutocomplete.Autocomplete
                         Value = sample,
                         DisplayLeft = sample,
                         SourceLabel = command.SourceLabel,
-                        StructureHeader = result.StructureHeader
+                        StructureHeader = result.StructureHeader,
+                        MatchKind = match.Kind,
+                        MatchOffset = match.Offset
                     });
                 }
             }
 
-            result.Suggestions = UsageStats.RankArgs(commandWord, argSuggestions);
+            result.Suggestions = UsageStats.RankArgs(commandWord, argSuggestions, argPrefix);
             result.SelectedIndex = ClampIndex(selectedIndex, result.Suggestions.Count);
             return result;
         }

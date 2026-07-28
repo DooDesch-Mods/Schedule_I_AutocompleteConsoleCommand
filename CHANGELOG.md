@@ -16,6 +16,15 @@ When cutting a release:
 
 ## [Unreleased]
 
+### Added
+
+- Graded suggestion search instead of prefix-only matching. `give fertilizer` now finds every item
+  containing the word, and the list is ordered by how close the hit is: exact, prefix, word start
+  (`long_life_fertilizer`), substring anywhere, and finally a loose subsequence (`fzr` still finds
+  `fertilizer`). Usage ranking applies inside a band, so a close hit never sits below a
+  frequently used loose one. Subsequence matching needs at least two typed characters; with nothing
+  typed the list stays an alphabetical browse list
+
 ### Changed
 
 - Panel docks flush against the console bar and spans its full width; the gap that used to sit

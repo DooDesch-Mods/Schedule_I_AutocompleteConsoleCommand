@@ -68,15 +68,20 @@ namespace ConsoleAutocomplete.Autocomplete
             return _byWord.TryGetValue(word.Trim(), out entry);
         }
 
-        public static IEnumerable<CommandEntry> FindPrefix(string prefix)
+        /// <summary>
+        /// Every command the typed text matches, graded by <see cref="FuzzyMatcher"/> so callers can
+        /// rank exact hits above loose ones.
+        /// </summary>
+        public static IEnumerable<CommandMatch> FindMatches(string query)
         {
             EnsureBuilt();
-            string p = prefix ?? string.Empty;
+            string q = query ?? string.Empty;
             for (int i = 0; i < _commands.Count; i++)
             {
                 CommandEntry cmd = _commands[i];
-                if (cmd.Word.StartsWith(p, StringComparison.OrdinalIgnoreCase))
-                    yield return cmd;
+                MatchResult match = FuzzyMatcher.Match(cmd.Word, q);
+                if (match.IsMatch)
+                    yield return new CommandMatch { Entry = cmd, Match = match };
             }
         }
 
