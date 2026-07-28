@@ -7,25 +7,50 @@ using UnityEngine.UI;
 namespace ConsoleAutocomplete.Autocomplete
 {
     /// <summary>
-    /// Dropdown panel hung <b>below</b> the console input bar (not above — that goes off the top of the screen).
-    /// Order: structure → helper/source → suggestion rows.
+    /// Dropdown panel hung <b>below</b> the console input bar (not above, that goes off the top of the screen).
+    /// Order: structure, helper/source, separator, suggestion rows.
+    /// The panel docks flush against the console bar; all breathing room is inner padding.
     /// </summary>
     public sealed class SuggestionOverlay
     {
         private const int MaxRows = SuggestionEngine.MaxVisibleSuggestions;
+        private const float HeaderFontSize = 17f;
+        private const float HelperFontSize = 13f;
+        private const float RowFontSize = 15f;
+        private const int DefaultInnerPadding = 12;
+        private const int MinInnerPadding = 8;
+        private const int MaxInnerPadding = 48;
+        private const float SeparatorBlockHeight = 9f;
+        private const float ScrollCueWidth = 18f;
+        private const float MaxIndentFraction = 0.35f;
+
+        /// <summary>Console bars taller/lower than this are not the bar, so the panel ignores them.</summary>
+        private const float MaxBarHeight = 220f;
+        private const float MaxBarBottomOffset = 64f;
+
+        /// <summary>Keeps the source label off the suggestion value instead of gluing them together.</summary>
+        private const string SourceGap = "    ";
 
         private GameObject _root;
         private RectTransform _rootRt;
         private GameObject _rowsRoot;
+        private VerticalLayoutGroup _layout;
+        private VerticalLayoutGroup _rowsLayout;
+        private GameObject _separator;
         private TextMeshProUGUI _header;
         private TextMeshProUGUI _helper;
         private TextMeshProUGUI _ghost;
+        private TextMeshProUGUI _measure;
+        private TextMeshProUGUI _scrollUp;
+        private TextMeshProUGUI _scrollDown;
         private readonly TextMeshProUGUI[] _rows = new TextMeshProUGUI[MaxRows];
         private TMP_InputField _input;
         private ConsoleUI _ui;
         private bool _visible;
         private int _scrollOffset;
         private string _scrollKey = string.Empty;
+        private string _indentKey = string.Empty;
+        private int _indentWidth;
 
         public bool IsVisible => _visible;
         public TMP_InputField BoundInput => _input;
@@ -57,34 +82,34 @@ namespace ConsoleAutocomplete.Autocomplete
             _root.transform.SetAsLastSibling();
 
             _rootRt = _root.AddComponent<RectTransform>();
-            // Hang downward from a top anchor (console is a top bar — growing upward leaves the screen).
+            // Hang downward from a top anchor (console is a top bar, growing upward leaves the screen).
             _rootRt.anchorMin = new Vector2(0f, 1f);
             _rootRt.anchorMax = new Vector2(1f, 1f);
             _rootRt.pivot = new Vector2(0.5f, 1f);
-            _rootRt.sizeDelta = new Vector2(-24f, 0f);
+            _rootRt.sizeDelta = Vector2.zero;
 
             Image background = _root.AddComponent<Image>();
             background.color = new Color(0.04f, 0.05f, 0.08f, 0.97f);
             background.raycastTarget = false;
 
-            VerticalLayoutGroup layout = _root.AddComponent<VerticalLayoutGroup>();
-            layout.padding = new RectOffset(12, 12, 10, 10);
-            layout.spacing = 4f;
-            layout.childAlignment = TextAnchor.UpperLeft;
-            layout.childControlHeight = true;
-            layout.childControlWidth = true;
-            layout.childForceExpandHeight = false;
-            layout.childForceExpandWidth = true;
+            _layout = _root.AddComponent<VerticalLayoutGroup>();
+            _layout.padding = new RectOffset(DefaultInnerPadding, DefaultInnerPadding, 10, 10);
+            _layout.spacing = 6f;
+            _layout.childAlignment = TextAnchor.UpperLeft;
+            _layout.childControlHeight = true;
+            _layout.childControlWidth = true;
+            _layout.childForceExpandHeight = false;
+            _layout.childForceExpandWidth = true;
 
             ContentSizeFitter fitter = _root.AddComponent<ContentSizeFitter>();
             fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
             fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
 
-            _header = CreateText(_root.transform, "Structure", 17f);
+            _header = CreateText(_root.transform, "Structure", HeaderFontSize);
             _header.color = new Color(1f, 0.86f, 0.4f, 1f);
             SetFixedHeight(_header, 24f);
 
-            _helper = CreateText(_root.transform, "Helper", 13f);
+            _helper = CreateText(_root.transform, "Helper", HelperFontSize);
             _helper.color = new Color(0.78f, 0.84f, 0.92f, 1f);
 #if MONO
             _helper.textWrappingMode = TextWrappingModes.Normal;
@@ -94,23 +119,32 @@ namespace ConsoleAutocomplete.Autocomplete
             _helper.overflowMode = TextOverflowModes.Overflow;
             SetFixedHeight(_helper, 36f);
 
+            _separator = CreateSeparator(_root.transform);
+
             _rowsRoot = new GameObject("Rows");
             _rowsRoot.transform.SetParent(_root.transform, false);
-            VerticalLayoutGroup rowsLayout = _rowsRoot.AddComponent<VerticalLayoutGroup>();
-            rowsLayout.spacing = 2f;
-            rowsLayout.childControlHeight = true;
-            rowsLayout.childControlWidth = true;
-            rowsLayout.childForceExpandHeight = false;
-            rowsLayout.childForceExpandWidth = true;
+            _rowsLayout = _rowsRoot.AddComponent<VerticalLayoutGroup>();
+            _rowsLayout.padding = new RectOffset(0, 0, 0, 0);
+            _rowsLayout.spacing = 2f;
+            _rowsLayout.childAlignment = TextAnchor.UpperLeft;
+            _rowsLayout.childControlHeight = true;
+            _rowsLayout.childControlWidth = true;
+            _rowsLayout.childForceExpandHeight = false;
+            _rowsLayout.childForceExpandWidth = true;
             ContentSizeFitter rowsFit = _rowsRoot.AddComponent<ContentSizeFitter>();
             rowsFit.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 
             for (int i = 0; i < MaxRows; i++)
             {
-                _rows[i] = CreateText(_rowsRoot.transform, "Row" + i, 15f);
+                _rows[i] = CreateText(_rowsRoot.transform, "Row" + i, RowFontSize);
                 _rows[i].richText = true;
                 _rows[i].overflowMode = TextOverflowModes.Overflow;
             }
+
+            // Scroll cues live at the right edge of the row block, off the text baseline.
+            _scrollUp = CreateScrollCue(_rowsRoot.transform, "ScrollUp", "▲", new Vector2(1f, 1f));
+            _scrollDown = CreateScrollCue(_rowsRoot.transform, "ScrollDown", "▼", new Vector2(1f, 0f));
+            _measure = CreateMeasureProbe(_root.transform);
 
             SyncFontsFromInput();
             CreateGhost(consoleUi);
@@ -142,6 +176,7 @@ namespace ConsoleAutocomplete.Autocomplete
             _visible = false;
             _scrollOffset = 0;
             _scrollKey = string.Empty;
+            _indentKey = string.Empty;
             if (_root != null)
                 _root.SetActive(false);
             if (_ghost != null)
@@ -200,6 +235,11 @@ namespace ConsoleAutocomplete.Autocomplete
 
             int visible = Math.Min(MaxRows, Math.Max(0, total - _scrollOffset));
             _rowsRoot.SetActive(total > 0);
+            if (_separator != null)
+                _separator.SetActive(total > 0 && _helper.gameObject.activeSelf);
+
+            ApplyRowIndent(result, total > 0);
+
             for (int row = 0; row < MaxRows; row++)
             {
                 int index = _scrollOffset + row;
@@ -224,20 +264,17 @@ namespace ConsoleAutocomplete.Autocomplete
                 if (!string.IsNullOrEmpty(right))
                 {
                     bool isMod = !right.Equals(ModAttribution.VanillaLabel, StringComparison.OrdinalIgnoreCase);
-                    sb.Append(isMod ? " <color=#7DFFB2>— " : " <color=#8B93A0>— ");
+                    sb.Append(SourceGap);
+                    sb.Append(isMod ? "<color=#7DFFB2>- " : "<color=#8B93A0>- ");
                     sb.Append(Escape(right));
                     sb.Append("</color>");
                 }
 
-                // Subtle cue when more rows exist above/below the window.
-                if (row == 0 && _scrollOffset > 0)
-                    sb.Insert(0, "<color=#6A7380>▲ </color>");
-                if (row == visible - 1 && _scrollOffset + visible < total)
-                    sb.Append(" <color=#6A7380>▼</color>");
-
                 _rows[row].text = sb.ToString();
                 _rows[row].gameObject.SetActive(true);
             }
+
+            UpdateScrollCues(visible, total);
 
             Canvas.ForceUpdateCanvases();
             LayoutRebuilder.ForceRebuildLayoutImmediate(_rootRt);
@@ -294,9 +331,93 @@ namespace ConsoleAutocomplete.Autocomplete
                 _scrollOffset = maxOffset;
         }
 
+        private void UpdateScrollCues(int visible, int total)
+        {
+            if (_scrollUp != null)
+                _scrollUp.gameObject.SetActive(visible > 0 && _scrollOffset > 0);
+
+            if (_scrollDown != null)
+                _scrollDown.gameObject.SetActive(visible > 0 && _scrollOffset + visible < total);
+        }
+
         /// <summary>
-        /// Place the panel directly under the TMP input so it hangs into the game view
-        /// (console is a top bar — anchoring upward puts the UI off-screen).
+        /// Indents the rows to the column of the argument they complete, so the options for
+        /// <c>give &lt;item&gt;</c> line up under <c>&lt;item&gt;</c> in the structure header.
+        /// </summary>
+        private void ApplyRowIndent(SuggestionEngine.Result result, bool hasRows)
+        {
+            if (_rowsLayout == null)
+                return;
+
+            int argIndex = hasRows && result != null ? result.ArgIndex : 0;
+            string header = _header != null ? _header.text : string.Empty;
+            string key = argIndex + "|" + header;
+            if (!string.Equals(key, _indentKey, StringComparison.Ordinal))
+            {
+                _indentKey = key;
+                _indentWidth = argIndex > 0
+                    ? Mathf.RoundToInt(MeasureHeaderPrefix(header, argIndex))
+                    : 0;
+            }
+
+            if (_rowsLayout.padding.left == _indentWidth)
+                return;
+
+            _rowsLayout.padding = new RectOffset(_indentWidth, 0, 0, 0);
+        }
+
+        /// <summary>
+        /// Width of the header up to the start of argument <paramref name="argIndex"/>. Falls back to
+        /// the last argument when the header lists fewer arguments than the player typed.
+        /// </summary>
+        private float MeasureHeaderPrefix(string header, int argIndex)
+        {
+            if (_measure == null || string.IsNullOrEmpty(header) || argIndex <= 0)
+                return 0f;
+
+            int cut = 0;
+            int tokenIndex = 0;
+            int lastTokenStart = 0;
+            bool inToken = false;
+            for (int i = 0; i < header.Length; i++)
+            {
+                if (!char.IsWhiteSpace(header[i]))
+                {
+                    if (inToken)
+                        continue;
+
+                    inToken = true;
+                    lastTokenStart = i;
+                    if (tokenIndex == argIndex)
+                    {
+                        cut = i;
+                        break;
+                    }
+                }
+                else if (inToken)
+                {
+                    inToken = false;
+                    tokenIndex++;
+                }
+            }
+
+            if (cut == 0)
+                cut = tokenIndex > 0 ? lastTokenStart : 0;
+
+            if (cut <= 0)
+                return 0f;
+
+            _measure.text = header.Substring(0, cut);
+            float width = _measure.preferredWidth;
+            float limit = _rootRt != null ? _rootRt.rect.width * MaxIndentFraction : 160f;
+            return Mathf.Clamp(width, 0f, Mathf.Max(0f, limit));
+        }
+
+        /// <summary>
+        /// Docks the panel flush against the bottom edge of the console bar so it hangs into the
+        /// game view (console is a top bar, anchoring upward puts the UI off-screen). The panel
+        /// spans the bar's width and turns the bar's own text inset into its inner padding, so the
+        /// suggestion rows line up with the console prompt instead of floating in a gap.
         /// </summary>
         private void RepositionUnderInput()
         {
@@ -305,8 +426,8 @@ namespace ConsoleAutocomplete.Autocomplete
 
             try
             {
-                RectTransform inputRt = _input.transform as RectTransform;
-                RectTransform canvasRt = _rootRt.parent as RectTransform;
+                RectTransform inputRt = AsRect(_input.transform);
+                RectTransform canvasRt = AsRect(_rootRt.parent);
                 if (inputRt == null || canvasRt == null)
                 {
                     ApplyTopBarFallback();
@@ -318,39 +439,54 @@ namespace ConsoleAutocomplete.Autocomplete
                     && _ui.canvas.renderMode != RenderMode.ScreenSpaceOverlay)
                     eventCam = _ui.canvas.worldCamera;
 
-                Vector3[] corners = new Vector3[4];
-                inputRt.GetWorldCorners(corners);
-                // corners: 0=BL, 1=TL, 2=TR, 3=BR
-                Vector2 screenBL = RectTransformUtility.WorldToScreenPoint(eventCam, corners[0]);
-                Vector2 screenBR = RectTransformUtility.WorldToScreenPoint(eventCam, corners[3]);
-
-                if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(
-                        canvasRt, screenBL, eventCam, out Vector2 localBL)
-                    || !RectTransformUtility.ScreenPointToLocalPointInRectangle(
-                        canvasRt, screenBR, eventCam, out Vector2 localBR))
+                if (!TryGetLocalEdges(inputRt, canvasRt, eventCam, out Vector2 inputMin, out Vector2 inputMax))
                 {
                     ApplyTopBarFallback();
                     return;
                 }
 
-                float width = Mathf.Abs(localBR.x - localBL.x);
-                if (width < 200f)
-                    width = Mathf.Max(420f, canvasRt.rect.width - 48f);
+                Vector2 dockMin = inputMin;
+                Vector2 dockMax = inputMax;
+                int innerPadding = DefaultInnerPadding;
 
-                float centerX = (localBL.x + localBR.x) * 0.5f;
-                float topY = localBL.y - 6f; // a few px under the input
+                RectTransform barRt = AsRect(_ui != null && _ui.Container != null ? _ui.Container.transform : null);
+                if (barRt != null
+                    && TryGetLocalEdges(barRt, canvasRt, eventCam, out Vector2 barMin, out Vector2 barMax)
+                    && IsPlausibleBar(barMin, barMax, inputMin, inputMax))
+                {
+                    dockMin = barMin;
+                    dockMax = barMax;
+                    // The gap that used to sit outside the panel becomes padding inside it.
+                    innerPadding = Mathf.Clamp(
+                        Mathf.RoundToInt(inputMin.x - barMin.x),
+                        MinInnerPadding,
+                        MaxInnerPadding);
+                }
+
+                float width = dockMax.x - dockMin.x;
+                if (width < 200f)
+                {
+                    width = Mathf.Max(420f, canvasRt.rect.width - 48f);
+                    innerPadding = DefaultInnerPadding;
+                }
+
+                float centerX = (dockMin.x + dockMax.x) * 0.5f;
+                float topY = dockMin.y; // flush against the bar, no outside gap
 
                 _rootRt.anchorMin = new Vector2(0.5f, 0.5f);
                 _rootRt.anchorMax = new Vector2(0.5f, 0.5f);
                 _rootRt.pivot = new Vector2(0.5f, 1f);
                 _rootRt.anchoredPosition = new Vector2(centerX, topY);
                 _rootRt.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, width);
+                ApplyInnerPadding(innerPadding);
 
                 ModLog.Debug(
-                    "Overlay under input anchored="
+                    "Overlay docked anchored="
                     + _rootRt.anchoredPosition
                     + " w="
-                    + width.ToString("F0"));
+                    + width.ToString("F0")
+                    + " pad="
+                    + innerPadding);
             }
             catch (Exception ex)
             {
@@ -359,18 +495,79 @@ namespace ConsoleAutocomplete.Autocomplete
             }
         }
 
+        /// <summary>
+        /// Rejects containers that are not the console bar (a full-screen wrapper would drop the
+        /// panel to the bottom of the screen).
+        /// </summary>
+        private static bool IsPlausibleBar(Vector2 barMin, Vector2 barMax, Vector2 inputMin, Vector2 inputMax)
+        {
+            float barWidth = barMax.x - barMin.x;
+            float barHeight = barMax.y - barMin.y;
+            float inputWidth = inputMax.x - inputMin.x;
+
+            return barWidth >= inputWidth - 1f
+                   && barHeight <= MaxBarHeight
+                   && barMin.y <= inputMin.y + 1f
+                   && inputMin.y - barMin.y <= MaxBarBottomOffset
+                   && inputMin.x >= barMin.x - 1f;
+        }
+
         private void ApplyTopBarFallback()
         {
             if (_rootRt == null)
                 return;
 
-            // Fixed drop just under the top edge of the console canvas.
+            // Fixed drop just under the top edge of the console canvas, full width.
             _rootRt.anchorMin = new Vector2(0f, 1f);
             _rootRt.anchorMax = new Vector2(1f, 1f);
             _rootRt.pivot = new Vector2(0.5f, 1f);
             _rootRt.anchoredPosition = new Vector2(0f, -42f);
-            _rootRt.sizeDelta = new Vector2(-24f, _rootRt.sizeDelta.y);
+            _rootRt.sizeDelta = new Vector2(0f, _rootRt.sizeDelta.y);
+            ApplyInnerPadding(DefaultInnerPadding);
         }
+
+        private void ApplyInnerPadding(int horizontal)
+        {
+            if (_layout == null || _layout.padding.left == horizontal)
+                return;
+
+            _layout.padding = new RectOffset(horizontal, horizontal, 10, 10);
+        }
+
+        /// <summary>
+        /// Projects a rect's bottom-left and top-right corner into the overlay's parent space.
+        /// </summary>
+        private static bool TryGetLocalEdges(
+            RectTransform target,
+            RectTransform space,
+            Camera eventCam,
+            out Vector2 min,
+            out Vector2 max)
+        {
+            min = Vector2.zero;
+            max = Vector2.zero;
+
+            Vector3[] corners = new Vector3[4];
+            target.GetWorldCorners(corners);
+            // corners: 0=BL, 1=TL, 2=TR, 3=BR
+            Vector2 screenBL = RectTransformUtility.WorldToScreenPoint(eventCam, corners[0]);
+            Vector2 screenTR = RectTransformUtility.WorldToScreenPoint(eventCam, corners[2]);
+
+            if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(space, screenBL, eventCam, out Vector2 localBL)
+                || !RectTransformUtility.ScreenPointToLocalPointInRectangle(space, screenTR, eventCam, out Vector2 localTR))
+                return false;
+
+            min = new Vector2(Mathf.Min(localBL.x, localTR.x), Mathf.Min(localBL.y, localTR.y));
+            max = new Vector2(Mathf.Max(localBL.x, localTR.x), Mathf.Max(localBL.y, localTR.y));
+            return true;
+        }
+
+        /// <summary>
+        /// GetComponent instead of a cast: under IL2CPP a managed <c>as</c> on an interop wrapper
+        /// hands back null even when the object really is a <see cref="RectTransform"/>.
+        /// </summary>
+        private static RectTransform AsRect(Transform transform) =>
+            transform != null ? transform.GetComponent<RectTransform>() : null;
 
         private void SyncFontsFromInput()
         {
@@ -380,6 +577,9 @@ namespace ConsoleAutocomplete.Autocomplete
 
             ApplyFont(_header, source);
             ApplyFont(_helper, source);
+            ApplyFont(_measure, source);
+            ApplyFont(_scrollUp, source);
+            ApplyFont(_scrollDown, source);
             for (int i = 0; i < _rows.Length; i++)
                 ApplyFont(_rows[i], source);
         }
@@ -491,6 +691,78 @@ namespace ConsoleAutocomplete.Autocomplete
                 ModLog.Warning("Failed to create ghost text: " + ex.Message);
                 _ghost = null;
             }
+        }
+
+        /// <summary>Thin rule between the description block and the rows, the panel's own hr.</summary>
+        private static GameObject CreateSeparator(Transform parent)
+        {
+            GameObject go = new GameObject("Separator");
+            go.transform.SetParent(parent, false);
+            go.AddComponent<RectTransform>();
+
+            LayoutElement le = go.AddComponent<LayoutElement>();
+            le.minHeight = SeparatorBlockHeight;
+            le.preferredHeight = SeparatorBlockHeight;
+            le.flexibleWidth = 1f;
+
+            GameObject line = new GameObject("Line");
+            line.transform.SetParent(go.transform, false);
+            RectTransform lineRt = line.AddComponent<RectTransform>();
+            lineRt.anchorMin = new Vector2(0f, 0.5f);
+            lineRt.anchorMax = new Vector2(1f, 0.5f);
+            lineRt.pivot = new Vector2(0.5f, 0.5f);
+            lineRt.anchoredPosition = Vector2.zero;
+            lineRt.sizeDelta = new Vector2(0f, 1f);
+
+            Image image = line.AddComponent<Image>();
+            image.color = new Color(1f, 1f, 1f, 0.14f);
+            image.raycastTarget = false;
+
+            go.SetActive(false);
+            return go;
+        }
+
+        /// <summary>
+        /// Scroll indicator pinned to a corner of the row block instead of riding along in a row's text.
+        /// </summary>
+        private static TextMeshProUGUI CreateScrollCue(
+            Transform parent,
+            string name,
+            string glyph,
+            Vector2 corner)
+        {
+            TextMeshProUGUI tmp = CreateText(parent, name, RowFontSize);
+            tmp.text = glyph;
+            tmp.color = new Color(0.42f, 0.45f, 0.5f, 1f);
+            tmp.alignment = TextAlignmentOptions.Right;
+            IgnoreLayout(tmp);
+
+            RectTransform rt = tmp.rectTransform;
+            rt.anchorMin = corner;
+            rt.anchorMax = corner;
+            rt.pivot = corner;
+            rt.anchoredPosition = Vector2.zero;
+            rt.sizeDelta = new Vector2(ScrollCueWidth, RowFontSize + 6f);
+
+            tmp.gameObject.SetActive(false);
+            return tmp;
+        }
+
+        /// <summary>Invisible, layout-exempt label used only to measure header widths.</summary>
+        private static TextMeshProUGUI CreateMeasureProbe(Transform parent)
+        {
+            TextMeshProUGUI tmp = CreateText(parent, "IndentProbe", HeaderFontSize);
+            tmp.color = new Color(1f, 1f, 1f, 0f);
+            IgnoreLayout(tmp);
+            tmp.rectTransform.sizeDelta = Vector2.zero;
+            return tmp;
+        }
+
+        private static void IgnoreLayout(TextMeshProUGUI tmp)
+        {
+            LayoutElement le = tmp != null ? tmp.GetComponent<LayoutElement>() : null;
+            if (le != null)
+                le.ignoreLayout = true;
         }
 
         private static TextMeshProUGUI CreateText(Transform parent, string name, float size)

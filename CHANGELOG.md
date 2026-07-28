@@ -14,6 +14,24 @@ When cutting a release:
 
 ---
 
+## [Unreleased]
+
+### Changed
+
+- Panel docks flush against the console bar and spans its full width; the gap that used to sit
+  around the panel is now inner padding, so rows line up with the console prompt
+- Description and suggestion rows are split by a thin rule with more space between them
+- Suggestion rows are indented to the column of the argument they complete
+  (rows for `give <item>` line up under `<item>` in the structure header)
+- Source labels are separated from the value by a wider gap and a plain `-` instead of an em-dash
+- Scroll cues sit at the right edge of the row block instead of inside the first/last row's text
+- **Up / Down** wraps around, so Up on the first entry jumps to the last one
+
+### Fixed
+
+- Overlay positioning fell back to a fixed offset on IL2CPP because `Transform as RectTransform`
+  returns null for interop wrappers; it now resolves the rect via `GetComponent`
+
 ## [0.1.0] - 2026-07-23
 
 First public release. Dual MelonLoader backend (IL2CPP + Mono) with a small loader plugin.
@@ -24,7 +42,7 @@ First public release. Dual MelonLoader backend (IL2CPP + Mono) with a small load
 - Gray **ghost text** for the current selection; **Tab** to apply
 - **Up / Down** moves through suggestions (vanilla history when the panel is closed)
 - **Structure helper** under the console bar (`give <item> [quantity]`, etc.)
-- Suggestion rows show source labels (`— Vanilla`, `— Legal Produce v…`, `— CommandProbe v…`)
+- Suggestion rows show source labels (`Vanilla`, `Legal Produce v…`, `CommandProbe v…`)
 - Argument providers for common commands (`give`, `spawnvehicle`, `packageproduct`, teleports, NPCs, weather, enums, …)
 - Per-save usage ranking stored under `{save}/Modded/ConsoleAutocomplete/usage_stats.json`
 - Mod item attribution via `Registry.AddToRegistry` stack walk (e.g. Legal Produce crops)
@@ -43,7 +61,7 @@ First public release. Dual MelonLoader backend (IL2CPP + Mono) with a small load
    - `Plugins/ConsoleAutocomplete.Loader.dll`
    - `Mods/ConsoleAutocomplete.IL2CPP.dll`
    - `Mods/ConsoleAutocomplete.dll` (Mono branch; optional if you only play IL2CPP)
-3. Launch the game — the loader enables the matching DLL and disables the other
+3. Launch the game - the loader enables the matching DLL and disables the other
 4. Open the developer console and start typing (e.g. `give tom`, `spawnvehicle `, `acprobe`)
 
 ### Expected behavior

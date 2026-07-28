@@ -19,6 +19,10 @@ namespace ConsoleAutocomplete.Autocomplete
             public string CurrentToken { get; set; } = string.Empty;
             public int TokenStart { get; set; }
             public int TokenEnd { get; set; }
+
+            /// <summary>0 while completing the command word, otherwise the argument being typed.</summary>
+            public int ArgIndex { get; set; }
+
             public bool HasSuggestions => Suggestions != null && Suggestions.Count > 0;
             public bool HasHelper =>
                 !string.IsNullOrEmpty(StructureHeader)
@@ -47,6 +51,7 @@ namespace ConsoleAutocomplete.Autocomplete
 
             string[] allTokens = Tokenize(input);
             int argIndex = GetArgIndex(input, caret);
+            result.ArgIndex = Math.Max(0, argIndex);
 
             if (argIndex <= 0)
             {

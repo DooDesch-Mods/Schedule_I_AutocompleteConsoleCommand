@@ -54,7 +54,7 @@ namespace ConsoleAutocomplete.Autocomplete
             {
                 ModLog.Debug("ConsoleUI.SetIsOpen(" + open + ").");
 
-                // Awake may have run before our patches on IL2CPP — wire on first open.
+                // Awake may have run before our patches on IL2CPP - wire on first open.
                 EnsureWired(__instance);
 
                 if (!open)
@@ -100,19 +100,13 @@ namespace ConsoleAutocomplete.Autocomplete
 
                 if (suggestionsOpen && Input.GetKeyDown(KeyCode.UpArrow))
                 {
-                    _selectedIndex = Math.Max(0, _selectedIndex - 1);
-                    Refresh(__instance, __instance.InputField.text, preserveSelection: true);
-                    PinCaret(__instance.InputField);
+                    MoveSelection(__instance, -1);
                     return;
                 }
 
                 if (suggestionsOpen && Input.GetKeyDown(KeyCode.DownArrow))
                 {
-                    _selectedIndex = Math.Min(
-                        (_current?.Suggestions?.Count ?? 1) - 1,
-                        _selectedIndex + 1);
-                    Refresh(__instance, __instance.InputField.text, preserveSelection: true);
-                    PinCaret(__instance.InputField);
+                    MoveSelection(__instance, 1);
                 }
             }
             catch (Exception ex)
@@ -182,6 +176,21 @@ namespace ConsoleAutocomplete.Autocomplete
             ModLog.Debug("onValueChanged: '" + text + "'");
             _selectedIndex = 0;
             Refresh(ui, text);
+        }
+
+        /// <summary>
+        /// Steps the highlight and wraps around at both ends, so Up on the first entry lands on the
+        /// last one instead of getting stuck.
+        /// </summary>
+        private static void MoveSelection(ConsoleUI ui, int step)
+        {
+            int count = _current?.Suggestions?.Count ?? 0;
+            if (ui?.InputField == null || count <= 0)
+                return;
+
+            _selectedIndex = ((_selectedIndex + step) % count + count) % count;
+            Refresh(ui, ui.InputField.text, preserveSelection: true);
+            PinCaret(ui.InputField);
         }
 
         private static void Refresh(ConsoleUI ui, string text, bool preserveSelection = false)
@@ -293,7 +302,7 @@ namespace ConsoleAutocomplete.Autocomplete
         [HarmonyPostfix]
         private static void ConsoleAwakePostfix()
         {
-            ModLog.Debug("Game Console.Awake — rebuilding command index.");
+            ModLog.Debug("Game Console.Awake - rebuilding command index.");
             CommandIndex.MarkDirty();
             CommandIndex.Rebuild();
         }
