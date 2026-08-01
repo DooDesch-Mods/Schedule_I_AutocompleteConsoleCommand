@@ -77,7 +77,13 @@
     </Reference>
   </ItemGroup>
 
-  <Target Name="CopyToMelonMods" AfterTargets="Build">
+  <!--
+    SkipDeploy exists so a batch rebuild can compile every mod without dropping DLLs into a live
+    game. Unlike the other mods here this target creates the destination itself, so pointing
+    GameCorePath somewhere harmless is not enough to stop it - and GameCorePath is also where this
+    project finds its references, so redirecting it breaks the build instead.
+  -->
+  <Target Name="CopyToMelonMods" AfterTargets="Build" Condition="'$(SkipDeploy)' != 'true'">
     <MakeDir Directories="$(GameCorePath)\Mods" />
     <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(GameCorePath)\Mods" SkipUnchangedFiles="false" />
     <!-- Debug builds also drop a marker file so you can confirm which DLL is installed. -->

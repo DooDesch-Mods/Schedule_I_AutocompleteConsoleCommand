@@ -7,8 +7,19 @@
     <EnableDefaultEmbeddedResourceItems>false</EnableDefaultEmbeddedResourceItems>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
 
-    <!-- Override via -p:GameCorePath="..." or local.build.props -->
-    <GameCorePath Condition="'$(GameCorePath)' == ''">D:\SteamLibrary\steamapps\common\Schedule I</GameCorePath>
+    <!--
+      Override via -p:GameCorePath="..." or local.build.props.
+
+      Unlike the other mods here, this one references the live install rather than Workspace/lib,
+      so the path has to actually exist on the machine doing the build. The candidates are tried in
+      order and the first one that is really there wins; a single hardcoded path silently produced
+      120+ "the type or namespace ScheduleOne does not exist" errors that looked like a game update
+      had broken the mod.
+    -->
+    <GameCorePath Condition="'$(GameCorePath)' == '' AND Exists('D:\Launcher\SteamLibrary\steamapps\common\Schedule I\Schedule I.exe')">D:\Launcher\SteamLibrary\steamapps\common\Schedule I</GameCorePath>
+    <GameCorePath Condition="'$(GameCorePath)' == '' AND Exists('D:\SteamLibrary\steamapps\common\Schedule I\Schedule I.exe')">D:\SteamLibrary\steamapps\common\Schedule I</GameCorePath>
+    <GameCorePath Condition="'$(GameCorePath)' == '' AND Exists('C:\Program Files (x86)\Steam\steamapps\common\Schedule I\Schedule I.exe')">C:\Program Files (x86)\Steam\steamapps\common\Schedule I</GameCorePath>
+    <GameCorePath Condition="'$(GameCorePath)' == '' AND Exists('E:\SteamLibrary\steamapps\common\Schedule I\Schedule I.exe')">E:\SteamLibrary\steamapps\common\Schedule I</GameCorePath>
     <MelonLoaderPath>$(GameCorePath)\MelonLoader</MelonLoaderPath>
     <Il2CppAssembliesPath>$(MelonLoaderPath)\Il2CppAssemblies</Il2CppAssembliesPath>
   </PropertyGroup>

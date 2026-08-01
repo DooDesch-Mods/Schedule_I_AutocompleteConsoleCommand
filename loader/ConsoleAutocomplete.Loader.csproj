@@ -16,7 +16,7 @@
     </Reference>
   </ItemGroup>
 
-  <Target Name="CopyToMelonPlugins" AfterTargets="Build">
+  <Target Name="CopyToMelonPlugins" AfterTargets="Build" Condition="'$(SkipDeploy)' != 'true'">
     <MakeDir Directories="$(GameCorePath)\Plugins" />
     <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(GameCorePath)\Plugins" SkipUnchangedFiles="true" />
   </Target>
