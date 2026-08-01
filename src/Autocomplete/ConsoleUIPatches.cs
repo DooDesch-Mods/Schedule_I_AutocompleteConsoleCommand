@@ -19,6 +19,15 @@ namespace ConsoleAutocomplete.Autocomplete
         private static SuggestionEngine.Result _current;
         private static int _selectedIndex;
         private static bool _suppressValueChanged;
+
+        /// <summary>
+        /// True while the arrow keys are walking the command history rather than the suggestion
+        /// list. Without it the first Up would recall a command, that command would fill the prompt,
+        /// suggestions would light up for it, and the second Up would jump into the suggestion list
+        /// instead of continuing back through history - which is not what anyone means by pressing
+        /// Up twice. Cleared as soon as the player types, completes with Tab, or closes the console.
+        /// </summary>
+        private static bool _historyMode;
         private static bool _listenerWired;
         private static ConsoleUI _wiredUi;
 
@@ -62,6 +71,7 @@ namespace ConsoleAutocomplete.Autocomplete
                     _overlay?.Hide();
                     _current = null;
                     _selectedIndex = 0;
+                    _historyMode = false;   // a fresh prompt starts on the suggestions again
                     return;
                 }
 
@@ -98,13 +108,21 @@ namespace ConsoleAutocomplete.Autocomplete
                     return;
                 }
 
-                if (suggestionsOpen && Input.GetKeyDown(KeyCode.UpArrow))
+                // The arrows belong to the suggestion list only when there is a prefix to filter by
+                // AND we are not walking the history. On an empty prompt the list is every command
+                // there is, which nobody steps through - you type to narrow it. And once history
+                // navigation has started it keeps the arrows until the player types again, so
+                // pressing Up twice walks two commands back instead of diving into suggestions.
+                // Tab still completes either way.
+                bool arrowsDriveSuggestions = suggestionsOpen && !IsPromptEmpty(__instance) && !_historyMode;
+
+                if (arrowsDriveSuggestions && Input.GetKeyDown(KeyCode.UpArrow))
                 {
                     MoveSelection(__instance, -1);
                     return;
                 }
 
-                if (suggestionsOpen && Input.GetKeyDown(KeyCode.DownArrow))
+                if (arrowsDriveSuggestions && Input.GetKeyDown(KeyCode.DownArrow))
                 {
                     MoveSelection(__instance, 1);
                 }
@@ -115,11 +133,44 @@ namespace ConsoleAutocomplete.Autocomplete
             }
         }
 
+        /// <summary>True when the prompt holds nothing a suggestion could usefully narrow.</summary>
+        private static bool IsPromptEmpty(ConsoleUI ui)
+            => ui?.InputField == null || string.IsNullOrWhiteSpace(ui.InputField.text);
+
         [HarmonyPatch(typeof(ConsoleUI), "UpdateCommandHistory")]
         [HarmonyPrefix]
-        private static bool UpdateCommandHistoryPrefix()
+        private static bool UpdateCommandHistoryPrefix(ConsoleUI __instance, out string __state)
         {
-            return !SuggestionsActive;
+            __state = __instance?.InputField != null ? __instance.InputField.text : null;
+            // Suggestions own the arrows only while there is a prefix to filter by. With an empty
+            // prompt the overlay lists every command, so blocking history there took the arrows
+            // away exactly when history is the only thing they could sensibly do - and once the
+            // walk has started it has to keep going, or the second Up lands somewhere else.
+            return !SuggestionsActive || IsPromptEmpty(__instance) || _historyMode;
+        }
+
+        [HarmonyPatch(typeof(ConsoleUI), "UpdateCommandHistory")]
+        [HarmonyPostfix]
+        private static void UpdateCommandHistoryPostfix(ConsoleUI __instance, string __state)
+        {
+            try
+            {
+                if (__instance?.InputField == null || __state == null)
+                    return;
+
+                // Vanilla recalls history with SetTextWithoutNotify, so onValueChanged never fires
+                // and the overlay would keep showing suggestions for whatever stood there before.
+                string now = __instance.InputField.text;
+                if (!string.Equals(now, __state, StringComparison.Ordinal))
+                {
+                    _historyMode = true;   // a recall happened: the arrows stay with the history
+                    Refresh(__instance, now);
+                }
+            }
+            catch (Exception ex)
+            {
+                ModLog.ErrorOnce("console-history", "ConsoleUI UpdateCommandHistory hook failed: " + ex);
+            }
         }
 
         private static void EnsureWired(ConsoleUI ui)
@@ -174,6 +225,10 @@ namespace ConsoleAutocomplete.Autocomplete
                 return;
 
             ModLog.Debug("onValueChanged: '" + text + "'");
+            // Vanilla recalls history with SetTextWithoutNotify, so reaching this handler always
+            // means the player typed - which ends the history walk and hands the arrows back to
+            // the suggestions.
+            _historyMode = false;
             _selectedIndex = 0;
             Refresh(ui, text);
         }
@@ -227,6 +282,7 @@ namespace ConsoleAutocomplete.Autocomplete
 
             string next = SuggestionEngine.ApplySelection(ui.InputField.text, _current);
             ModLog.Debug("Tab apply → '" + next + "'");
+            _historyMode = false;
             _suppressValueChanged = true;
             try
             {
