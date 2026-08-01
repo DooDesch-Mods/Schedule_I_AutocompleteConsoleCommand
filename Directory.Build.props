@@ -1,4 +1,9 @@
 <Project>
+
+  <!-- Your own machine's paths, gitignored. Optional: without it the defaults below are used. -->
+  <Import Project="$(MSBuildThisFileDirectory)local.build.props"
+          Condition="Exists('$(MSBuildThisFileDirectory)local.build.props')" />
+
   <PropertyGroup>
     <AssemblyName Condition="'$(MSBuildProjectName)' != 'ConsoleAutocomplete.Loader'">ConsoleAutocomplete</AssemblyName>
     <RootNamespace Condition="'$(MSBuildProjectName)' != 'ConsoleAutocomplete.Loader'">ConsoleAutocomplete</RootNamespace>
@@ -8,17 +13,21 @@
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
 
     <!--
-      Override via -p:GameCorePath="..." or local.build.props.
+      Where the game is. This project references the live install rather than a checked-in
+      reference set, so the path has to exist on whatever machine is building.
 
-      Unlike the other mods here, this one references the live install rather than Workspace/lib,
-      so the path has to actually exist on the machine doing the build. The candidates are tried in
-      order and the first one that is really there wins; a single hardcoded path silently produced
-      120+ "the type or namespace ScheduleOne does not exist" errors that looked like a game update
-      had broken the mod.
+      Order: an explicit -p:GameCorePath wins, then local.build.props (gitignored - put your own
+      path there), then the default Steam locations below. Steam's own install path comes from the
+      registry, so the common case needs no configuration at all.
+
+      A single hardcoded path used to be the only option, and on any machine that did not match it
+      the build produced 120+ "the type or namespace ScheduleOne does not exist" errors, which read
+      like the game had changed rather than like a wrong path.
     -->
-    <GameCorePath Condition="'$(GameCorePath)' == '' AND Exists('D:\Launcher\SteamLibrary\steamapps\common\Schedule I\Schedule I.exe')">D:\Launcher\SteamLibrary\steamapps\common\Schedule I</GameCorePath>
-    <GameCorePath Condition="'$(GameCorePath)' == '' AND Exists('D:\SteamLibrary\steamapps\common\Schedule I\Schedule I.exe')">D:\SteamLibrary\steamapps\common\Schedule I</GameCorePath>
+    <SteamPath Condition="'$(SteamPath)' == ''">$(registry:HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Valve\Steam@InstallPath)</SteamPath>
+    <GameCorePath Condition="'$(GameCorePath)' == '' AND '$(SteamPath)' != '' AND Exists('$(SteamPath)\steamapps\common\Schedule I\Schedule I.exe')">$(SteamPath)\steamapps\common\Schedule I</GameCorePath>
     <GameCorePath Condition="'$(GameCorePath)' == '' AND Exists('C:\Program Files (x86)\Steam\steamapps\common\Schedule I\Schedule I.exe')">C:\Program Files (x86)\Steam\steamapps\common\Schedule I</GameCorePath>
+    <GameCorePath Condition="'$(GameCorePath)' == '' AND Exists('D:\SteamLibrary\steamapps\common\Schedule I\Schedule I.exe')">D:\SteamLibrary\steamapps\common\Schedule I</GameCorePath>
     <GameCorePath Condition="'$(GameCorePath)' == '' AND Exists('E:\SteamLibrary\steamapps\common\Schedule I\Schedule I.exe')">E:\SteamLibrary\steamapps\common\Schedule I</GameCorePath>
     <MelonLoaderPath>$(GameCorePath)\MelonLoader</MelonLoaderPath>
     <Il2CppAssembliesPath>$(MelonLoaderPath)\Il2CppAssemblies</Il2CppAssembliesPath>

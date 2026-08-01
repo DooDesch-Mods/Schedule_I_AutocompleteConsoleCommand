@@ -17,6 +17,14 @@
   </ItemGroup>
 
   <Target Name="ValidateIl2CppAssemblies" BeforeTargets="CoreCompile">
+    <!--
+      Fail with the actual reason. Without this the build reaches the compiler with no references
+      resolved and emits 120+ "the type or namespace ScheduleOne does not exist" errors, which look
+      like the game broke the mod rather than like nobody found the game.
+    -->
+    <Error
+      Condition="'$(GameCorePath)' == ''"
+      Text="Schedule I was not found. Set the path once in local.build.props (gitignored) as &lt;GameCorePath&gt;, or pass -p:GameCorePath=&quot;...&quot;. Checked: the Steam install from the registry, C:\Program Files (x86)\Steam, D:\SteamLibrary, E:\SteamLibrary." />
     <Error
       Condition="!Exists('$(Il2CppAssembliesPath)\Assembly-CSharp.dll')"
       Text="IL2CPP interop assemblies not found. Launch Schedule I once with MelonLoader so $(Il2CppAssembliesPath) is generated." />
