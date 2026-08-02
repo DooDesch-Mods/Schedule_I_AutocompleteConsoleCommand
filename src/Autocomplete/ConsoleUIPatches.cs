@@ -24,6 +24,17 @@ namespace ConsoleAutocomplete.Autocomplete
         private static ConsoleUI _wiredUi;
 
         /// <summary>
+        /// The prompt the current suggestion list was built for.
+        ///
+        /// Not every onValueChanged means the player typed. The dead-key mark from the toggle key is delivered
+        /// whenever the next input event happens - which can be a press of an ARROW key, long after the console
+        /// opened - and taking it back off writes to the field, which raises another change for a prompt that ends
+        /// up exactly as it was. Handled blindly, that resets the highlight the arrow had just moved: the list read
+        /// `unbind` and Tab entered `give`.
+        /// </summary>
+        private static string _lastText = string.Empty;
+
+        /// <summary>
         /// True from the moment the console opens until the first character lands in the prompt.
         ///
         /// The key that opens the console is a DEAD KEY on several layouts - `^` on German and Swiss
@@ -79,6 +90,7 @@ namespace ConsoleAutocomplete.Autocomplete
                     _selectedIndex = 0;
                     _awaitingFirstChar = false;
                     _repeatKey = KeyCode.None;
+                    _lastText = string.Empty;
                     return;
                 }
 
@@ -302,6 +314,15 @@ namespace ConsoleAutocomplete.Autocomplete
                 text = DropPendingDeadKey(ui, text);
             }
 
+            // Nothing the player did survived: the whole change was a stray mark being taken off again, and the
+            // list already stands for this prompt. Rebuilding it here would throw away a selection the arrow keys
+            // had moved a moment earlier - which is exactly what the dead key's late arrival used to do.
+            if (string.Equals(text, _lastText, StringComparison.Ordinal))
+            {
+                ModLog.Debug("prompt unchanged after the dead key came off - keeping the selection");
+                return;
+            }
+
             ModLog.Debug("onValueChanged: '" + text + "'");
             _selectedIndex = 0;
             Refresh(ui, text);
@@ -402,6 +423,7 @@ namespace ConsoleAutocomplete.Autocomplete
 
             EnsureWired(ui);
             CommandIndex.EnsureBuilt();
+            _lastText = text ?? string.Empty;
             int caret = ui.InputField.caretPosition;
             int selected = preserveSelection ? _selectedIndex : 0;
             _current = SuggestionEngine.Build(text, caret, selected);
