@@ -31,6 +31,12 @@ namespace ConsoleAutocomplete.Autocomplete
         /// <summary>Keeps the source label off the suggestion value instead of gluing them together.</summary>
         private const string SourceGap = "    ";
 
+        /// <summary>Clear space between the longest visible suggestion and the source column.</summary>
+        private const float SourceColumnGap = 26f;
+
+        /// <summary>The source column never takes more than this share of the panel width.</summary>
+        private const float MaxSourceColumnFraction = 0.6f;
+
         private GameObject _root;
         private RectTransform _rootRt;
         private GameObject _rowsRoot;
@@ -51,6 +57,9 @@ namespace ConsoleAutocomplete.Autocomplete
         private string _scrollKey = string.Empty;
         private string _indentKey = string.Empty;
         private int _indentWidth;
+        private string _columnKey = string.Empty;
+        private float _sourceColumn;
+        private readonly float[] _rowNameWidth = new float[MaxRows];
 
         public bool IsVisible => _visible;
         public TMP_InputField BoundInput => _input;
@@ -177,6 +186,7 @@ namespace ConsoleAutocomplete.Autocomplete
             _scrollOffset = 0;
             _scrollKey = string.Empty;
             _indentKey = string.Empty;
+            _columnKey = string.Empty;
             if (_root != null)
                 _root.SetActive(false);
             if (_ghost != null)
@@ -239,6 +249,7 @@ namespace ConsoleAutocomplete.Autocomplete
                 _separator.SetActive(total > 0 && _helper.gameObject.activeSelf);
 
             ApplyRowIndent(result, total > 0);
+            MeasureSourceColumn(result, visible);
 
             for (int row = 0; row < MaxRows; row++)
             {
@@ -264,7 +275,16 @@ namespace ConsoleAutocomplete.Autocomplete
                 if (!string.IsNullOrEmpty(right))
                 {
                     bool isMod = !right.Equals(ModAttribution.VanillaLabel, StringComparison.OrdinalIgnoreCase);
-                    sb.Append(SourceGap);
+
+                    // An absolute x, so every label in the list starts in the same column and the eye
+                    // reads straight down instead of tracking a ragged edge. A name too wide for the
+                    // column keeps the plain gap: <pos> MOVES the cursor rather than pushing, so a
+                    // column to the left of the name would draw the label back over it.
+                    if (_sourceColumn > 0f && _rowNameWidth[row] + 4f < _sourceColumn)
+                        sb.Append("<pos=").Append(Mathf.RoundToInt(_sourceColumn)).Append("px>");
+                    else
+                        sb.Append(SourceGap);
+
                     sb.Append(isMod ? "<color=#7DFFB2>- " : "<color=#8B93A0>- ");
                     sb.Append(Escape(right));
                     sb.Append("</color>");
@@ -341,6 +361,48 @@ namespace ConsoleAutocomplete.Autocomplete
         }
 
         /// <summary>
+        /// Works out the x every source label starts at: the widest visible suggestion plus a gap.
+        ///
+        /// Measured rather than fixed, because the widest name decides where the column can begin - a
+        /// constant would waste half the panel on a list of short names and collide on a list of long
+        /// ones. Recomputed only when the visible set changes, so moving the selection never shifts the
+        /// column sideways, and holding an arrow does not re-measure eight rows per frame.
+        /// </summary>
+        private void MeasureSourceColumn(SuggestionEngine.Result result, int visible)
+        {
+            string key = _scrollOffset
+                         + "|" + visible
+                         + "|" + (result?.Suggestions?.Count ?? 0)
+                         + "|" + (result?.CurrentToken ?? string.Empty);
+            if (string.Equals(key, _columnKey, StringComparison.Ordinal))
+                return;
+
+            _columnKey = key;
+            _sourceColumn = 0f;
+            if (_measure == null || result?.Suggestions == null || visible <= 0)
+                return;
+
+            _measure.fontSize = RowFontSize;
+            float widest = 0f;
+            for (int row = 0; row < visible && row < MaxRows; row++)
+            {
+                int index = _scrollOffset + row;
+                if (index >= result.Suggestions.Count)
+                    break;
+
+                SuggestionItem item = result.Suggestions[index];
+                _measure.text = item.DisplayLeft ?? item.Value ?? string.Empty;
+                float width = _measure.preferredWidth;
+                _rowNameWidth[row] = width;
+                if (width > widest)
+                    widest = width;
+            }
+
+            float limit = _rootRt != null ? _rootRt.rect.width * MaxSourceColumnFraction : 240f;
+            _sourceColumn = Mathf.Clamp(widest + SourceColumnGap, 0f, Mathf.Max(0f, limit));
+        }
+
+        /// <summary>
         /// Indents the rows to the column of the argument they complete, so the options for
         /// <c>give &lt;item&gt;</c> line up under <c>&lt;item&gt;</c> in the structure header.
         /// </summary>
@@ -407,6 +469,9 @@ namespace ConsoleAutocomplete.Autocomplete
             if (cut <= 0)
                 return 0f;
 
+            // The probe is shared with the row-column measurement, which runs at the row size - so the
+            // size is set here rather than assumed, or the indent would be measured in the wrong font.
+            _measure.fontSize = HeaderFontSize;
             _measure.text = header.Substring(0, cut);
             float width = _measure.preferredWidth;
             float limit = _rootRt != null ? _rootRt.rect.width * MaxIndentFraction : 160f;
