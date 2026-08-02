@@ -463,6 +463,17 @@ namespace ConsoleAutocomplete.Autocomplete
             Refresh(ui, next);
         }
 
+        /// <summary>
+        /// Puts the caret at the end of the text, in BOTH of the two places TextMeshPro keeps it.
+        ///
+        /// A TMP_InputField carries two cursors: `caretPosition` is where the bar is drawn, and
+        /// `stringPosition` is where the next character is actually inserted. They are normally moved
+        /// together, and setting only the visible one leaves the field looking right and typing wrong.
+        ///
+        /// That is what happened after the dead-key mark was taken off the prompt: the caret was drawn
+        /// after the first letter while the insertion point was still at 0, so typing `give` produced
+        /// `iveg` - the g stayed where it was and everything after it went in front of it.
+        /// </summary>
         private static void PinCaret(TMP_InputField field)
         {
             if (field == null)
@@ -472,6 +483,9 @@ namespace ConsoleAutocomplete.Autocomplete
             field.caretPosition = end;
             field.selectionAnchorPosition = end;
             field.selectionFocusPosition = end;
+            field.stringPosition = end;
+            field.selectionStringAnchorPosition = end;
+            field.selectionStringFocusPosition = end;
         }
     }
 
