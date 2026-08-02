@@ -138,24 +138,62 @@ namespace ConsoleAutocomplete.Autocomplete
             foreach (SuggestionItem item in list)
                 item.UsageCount = GetArgCount(cmd, item.Value);
 
-            return RankByMatchThenUsage(list, !string.IsNullOrEmpty(query));
+            return RankByMatchThenUsage(list, !string.IsNullOrEmpty(query), groupBySource: true);
         }
 
         /// <summary>
         /// Match quality first, usage stats inside a quality band. An exact or prefix hit therefore
         /// never ends up below a heavily used substring hit.
+        ///
+        /// With <paramref name="groupBySource"/> the band is then broken into blocks by who supplied the
+        /// entry - the game first, then one block per mod. Argument lists are where this matters: a
+        /// `give` completes against everything every installed mod ever registered, and interleaving
+        /// those by usage alone turns the list into a jumble with no way to tell whose item is whose.
+        /// Ranking still applies, one block at a time, so a much-used entry stays at the top of its own.
         /// </summary>
-        private static List<SuggestionItem> RankByMatchThenUsage(List<SuggestionItem> list, bool preferShorter)
+        private static List<SuggestionItem> RankByMatchThenUsage(
+            List<SuggestionItem> list,
+            bool preferShorter,
+            bool groupBySource = false)
         {
             var result = new List<SuggestionItem>(list.Count);
             foreach (IGrouping<MatchKind, SuggestionItem> band in list
                 .GroupBy(i => i.MatchKind)
                 .OrderByDescending(g => g.Key))
             {
-                result.AddRange(RankByUsageThenAlpha(band.ToList(), preferShorter));
+                if (!groupBySource)
+                {
+                    result.AddRange(RankByUsageThenAlpha(band.ToList(), preferShorter));
+                    continue;
+                }
+
+                foreach (IGrouping<string, SuggestionItem> source in band
+                    .GroupBy(i => i.SourceLabel ?? string.Empty)
+                    .OrderBy(g => SourceRank(g.Key))
+                    .ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
+                {
+                    result.AddRange(RankByUsageThenAlpha(source.ToList(), preferShorter));
+                }
             }
 
             return result;
+        }
+
+        /// <summary>
+        /// Which block a source label belongs in: the game, then the mods, then whatever could not be
+        /// attributed. Mods are ordered by name within their rank, so the blocks stay in one order from
+        /// one session to the next rather than following load order.
+        /// </summary>
+        private static int SourceRank(string label)
+        {
+            if (string.Equals(label, ModAttribution.VanillaLabel, StringComparison.Ordinal))
+                return 0;
+
+            if (string.IsNullOrEmpty(label)
+                || string.Equals(label, ModAttribution.UnknownLabel, StringComparison.Ordinal))
+                return 2;
+
+            return 1;
         }
 
         private static List<SuggestionItem> RankByUsageThenAlpha(List<SuggestionItem> list, bool preferShorter)
