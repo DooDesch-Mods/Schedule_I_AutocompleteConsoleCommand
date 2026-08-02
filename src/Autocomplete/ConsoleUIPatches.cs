@@ -28,6 +28,18 @@ namespace ConsoleAutocomplete.Autocomplete
         /// Up twice. Cleared as soon as the player types, completes with Tab, or closes the console.
         /// </summary>
         private static bool _historyMode;
+
+        /// <summary>
+        /// The mirror of <see cref="_historyMode"/>: true once Down has started walking the suggestion
+        /// list from an empty prompt, which hands BOTH arrows to the list until the player types.
+        ///
+        /// On an empty prompt the direction of the first press decides who owns the arrows - Up starts
+        /// on the history, Down starts on the suggestions. Without the mode, the second press would be
+        /// judged by the same "prompt is empty" test as the first and jump to the other one mid-walk.
+        /// Typing clears it, so an empty prompt is always back to the choice.
+        /// </summary>
+        private static bool _listMode;
+
         private static bool _listenerWired;
         private static ConsoleUI _wiredUi;
 
@@ -86,6 +98,7 @@ namespace ConsoleAutocomplete.Autocomplete
                     _current = null;
                     _selectedIndex = 0;
                     _historyMode = false;   // a fresh prompt starts on the suggestions again
+                    _listMode = false;
                     _awaitingFirstChar = false;
                     _repeatKey = KeyCode.None;
                     return;
@@ -142,18 +155,23 @@ namespace ConsoleAutocomplete.Autocomplete
                     return;
                 }
 
-                // The arrows belong to the suggestion list only when there is a prefix to filter by
-                // AND we are not walking the history. On an empty prompt the list is every command
-                // there is, which nobody steps through - you type to narrow it. And once history
-                // navigation has started it keeps the arrows until the player types again, so
-                // pressing Up twice walks two commands back instead of diving into suggestions.
-                // Tab still completes either way.
-                bool arrowsDriveSuggestions = suggestionsOpen && !IsPromptEmpty(__instance) && !_historyMode;
-
                 // Read the arrows every frame, not only when they drive the list: the repeat timer has
                 // to see the key go up, or the next press would inherit the last one's schedule and
                 // fire its whole burst immediately.
                 int step = ArrowStep();
+                bool emptyPrompt = IsPromptEmpty(__instance);
+
+                // On an empty prompt the DIRECTION picks the list: Up walks the command history, Down
+                // walks the suggestions. Both used to go to the history, which left the suggestion list
+                // - every command there is, at that point - with no way to step through it at all.
+                if (suggestionsOpen && emptyPrompt && step > 0 && !_historyMode)
+                    _listMode = true;
+
+                // With a prefix typed the suggestions own both arrows outright. Walking the history
+                // keeps them until the player types again, so pressing Up twice goes two commands back
+                // instead of diving into the suggestions. Tab completes either way.
+                bool arrowsDriveSuggestions = suggestionsOpen && !_historyMode && (!emptyPrompt || _listMode);
+
                 if (arrowsDriveSuggestions && step != 0)
                     MoveSelection(__instance, step);
             }
@@ -229,11 +247,19 @@ namespace ConsoleAutocomplete.Autocomplete
         private static bool UpdateCommandHistoryPrefix(ConsoleUI __instance, out string __state)
         {
             __state = __instance?.InputField != null ? __instance.InputField.text : null;
-            // Suggestions own the arrows only while there is a prefix to filter by. With an empty
-            // prompt the overlay lists every command, so blocking history there took the arrows
-            // away exactly when history is the only thing they could sensibly do - and once the
-            // walk has started it has to keep going, or the second Up lands somewhere else.
-            return !SuggestionsActive || IsPromptEmpty(__instance) || _historyMode;
+
+            // Nothing to suggest, or the walk through the history has already begun: vanilla runs.
+            if (!SuggestionsActive || _historyMode)
+                return true;
+
+            // A prefix to filter by means the suggestions own both arrows.
+            if (!IsPromptEmpty(__instance))
+                return false;
+
+            // Empty prompt: Up is the history's, Down belongs to the suggestion list. It has to be
+            // blocked here as well as handled in the postfix, because vanilla steps the history from
+            // inside ConsoleUI.Update, which runs first - otherwise one Down would do both.
+            return !_listMode && !Input.GetKeyDown(KeyCode.DownArrow);
         }
 
         [HarmonyPatch(typeof(ConsoleUI), "UpdateCommandHistory")]
