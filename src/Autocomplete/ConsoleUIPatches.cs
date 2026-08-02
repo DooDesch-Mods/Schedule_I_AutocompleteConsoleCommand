@@ -23,30 +23,6 @@ namespace ConsoleAutocomplete.Autocomplete
         private static bool _listenerWired;
         private static ConsoleUI _wiredUi;
 
-        /// <summary>
-        /// The prompt the current suggestion list was built for.
-        ///
-        /// Not every onValueChanged means the player typed. The dead-key mark from the toggle key is delivered
-        /// whenever the next input event happens - which can be a press of an ARROW key, long after the console
-        /// opened - and taking it back off writes to the field, which raises another change for a prompt that ends
-        /// up exactly as it was. Handled blindly, that resets the highlight the arrow had just moved: the list read
-        /// `unbind` and Tab entered `give`.
-        /// </summary>
-        private static string _lastText = string.Empty;
-
-        /// <summary>
-        /// True from the moment the console opens until the first character lands in the prompt.
-        ///
-        /// The key that opens the console is a DEAD KEY on several layouts - `^` on German and Swiss keyboards,
-        /// `´` on others. A dead key emits nothing of its own when pressed: the system holds the mark and hands
-        /// it to the next keystroke. So the console opens on `^`, the player types `help`, and the prompt reads
-        /// `^help` - or `âdd`, when the next letter is a vowel the mark composes with.
-        ///
-        /// Vanilla cannot catch this. It clears the field in SetIsOpen (ScheduleOne.UI/ConsoleUI.cs:107) BEFORE
-        /// the mark arrives, and once it arrives nothing distinguishes it from typing.
-        /// </summary>
-        private static bool _awaitingFirstChar;
-
         internal static bool SuggestionsActive =>
             _overlay != null && _overlay.IsVisible && _current != null && _current.HasSuggestions;
 
@@ -87,15 +63,9 @@ namespace ConsoleAutocomplete.Autocomplete
                     _overlay?.Hide();
                     _current = null;
                     _selectedIndex = 0;
-                    _awaitingFirstChar = false;
                     _repeatKey = KeyCode.None;
-                    _lastText = string.Empty;
                     return;
                 }
-
-                // Vanilla has just emptied the field, so whatever arrives next is the first thing the
-                // player typed - and possibly the toggle key's dead-key mark riding along with it.
-                _awaitingFirstChar = true;
 
                 UsageStats.EnsureLoadedForCurrentSave();
                 CommandIndex.MarkDirty();
@@ -213,9 +183,62 @@ namespace ConsoleAutocomplete.Autocomplete
 
             ui.InputField.onValueChanged.AddListener(
                 UnityEvents.Action<string>(text => OnValueChanged(ui, text)));
+            ui.InputField.onValidateInput = Validator();
             _listenerWired = true;
             _wiredUi = ui;
             ModLog.Debug("Wired onValueChanged + overlay to ConsoleUI.");
+        }
+
+        /// <summary>
+        /// The marks a dead key leaves behind on their own, when the layout could not compose them with
+        /// the letter that followed: circumflex, grave, acute, tilde.
+        /// </summary>
+        private const string DeadKeyMarks = "^`\u00B4~";   // ^ ` ´ ~
+
+        /// <summary>
+        /// Refuses the console toggle's own mark before it can reach the prompt.
+        ///
+        /// `^` opens the console on German and Swiss layouts, and it is a dead key: pressing it emits nothing of
+        /// its own, and the mark arrives as an input event a moment later - into the prompt vanilla has just
+        /// emptied. The player sees `^help` and never typed the `^`.
+        ///
+        /// REFUSED, NOT DELETED, and the difference is the whole fix. TMP calls this before inserting and drops
+        /// the character when the answer is 0 (TMP_InputField.KeyPressed: `if (input != 0) Insert(input)`), so
+        /// nothing is written and no caret has to be repaired. Taking the mark out afterwards cannot be made to
+        /// work: caretPosition and stringPosition are mapped through textInfo.characterInfo, the RENDERED text,
+        /// and a field written with SetTextWithoutNotify still carries the old label - so ClampCaretPos pulls
+        /// every position back onto it and the next keystroke lands at the front. That is what turned `give` into
+        /// `iveg` through three attempts at fixing it up after the fact.
+        ///
+        /// Only at position 0. Nothing in the command set begins with one of these marks, and a `^` typed
+        /// anywhere else is somebody's argument, not the toggle key.
+        /// </summary>
+        private static char RejectLeadingDeadKey(string text, int charIndex, char addedChar)
+        {
+            if (charIndex == 0 && DeadKeyMarks.IndexOf(addedChar) >= 0)
+            {
+                ModLog.Debug("refused the toggle key's mark '" + addedChar + "' at the front of the prompt");
+                return '\0';
+            }
+
+            return addedChar;
+        }
+
+        /// <summary>
+        /// Wraps the validator for the runtime this build targets. Assigning it replaces TMP's own
+        /// `characterValidation`, which the console leaves at None - a command line takes any character.
+        /// </summary>
+        private static TMP_InputField.OnValidateInput Validator()
+        {
+#if IL2CPP
+            // A method group cannot be assigned to an Il2Cpp delegate type: the interop wrapper has to build the
+            // native side of it, so the managed one is handed over explicitly.
+            return Il2CppInterop.Runtime.DelegateSupport
+                .ConvertDelegate<TMP_InputField.OnValidateInput>(
+                    (Func<string, int, char, char>)RejectLeadingDeadKey);
+#else
+            return RejectLeadingDeadKey;
+#endif
         }
 
         private static bool IsConsoleCanvasEnabled(ConsoleUI ui)
@@ -248,22 +271,7 @@ namespace ConsoleAutocomplete.Autocomplete
             if (_suppressValueChanged)
                 return;
 
-            if (_awaitingFirstChar)
-            {
-                _awaitingFirstChar = false;
-                text = DropPendingDeadKey(ui, text);
-            }
-
-            // Nothing the player did survived: the whole change was a stray mark being taken off again, and the
-            // list already stands for this prompt. Rebuilding it here would throw away a selection the arrow keys
-            // had moved a moment earlier - which is exactly what the dead key's late arrival used to do.
-            if (string.Equals(text, _lastText, StringComparison.Ordinal))
-            {
-                ModLog.Debug("prompt unchanged after the dead key came off - keeping the selection");
-                return;
-            }
-
-            ModLog.Debug("onValueChanged: '" + text + "'");
+            ModLog.Debug("onValueChanged: '" + text + "' string=" + ui.InputField.stringPosition);
             _selectedIndex = 0;
             Refresh(ui, text);
         }
@@ -326,79 +334,6 @@ namespace ConsoleAutocomplete.Autocomplete
         }
 
         /// <summary>
-        /// The marks a dead key leaves behind on their own, when the layout could not compose them with
-        /// the letter that followed: circumflex, grave, acute, tilde.
-        /// </summary>
-        private const string DeadKeyMarks = "^`\u00B4~";   // ^ ` ´ ~
-
-        /// <summary>
-        /// Composed characters a dead key produces, paired index-for-index with the letter underneath.
-        /// Circumflex first (the German and Swiss console key), then grave, acute and tilde, because
-        /// those sit under the console toggle on French, Spanish and Portuguese layouts.
-        ///
-        /// Written as escapes rather than as the characters themselves so the table cannot be silently
-        /// mangled by a tool that guesses this file's encoding wrong.
-        /// </summary>
-        private const string ComposedChars =
-            "\u00E2\u00EA\u00EE\u00F4\u00FB\u00C2\u00CA\u00CE\u00D4\u00DB"    // â ê î ô û Â Ê Î Ô Û
-            + "\u00E0\u00E8\u00EC\u00F2\u00F9\u00C0\u00C8\u00CC\u00D2\u00D9"  // à è ì ò ù À È Ì Ò Ù
-            + "\u00E1\u00E9\u00ED\u00F3\u00FA\u00C1\u00C9\u00CD\u00D3\u00DA"  // á é í ó ú Á É Í Ó Ú
-            + "\u00E3\u00F1\u00F5\u00C3\u00D1\u00D5";                         // ã ñ õ Ã Ñ Õ
-
-        private const string BaseChars =
-            "aeiouAEIOU"
-            + "aeiouAEIOU"
-            + "aeiouAEIOU"
-            + "anoANO";
-
-        /// <summary>
-        /// Takes the toggle key's pending dead-key mark off the front of a freshly opened prompt.
-        ///
-        /// Only ever looks at the FIRST character of the FIRST input after opening, which is the only
-        /// place a pending mark can land - so a `^` typed anywhere else, at any later moment, is left
-        /// alone. Nothing in the command set starts with one of these characters.
-        ///
-        /// The composed case has to put the letter back rather than drop the character: `^` followed by
-        /// `a` arrives as a single `â`, and deleting it would eat the first letter of the command.
-        /// </summary>
-        private static string DropPendingDeadKey(ConsoleUI ui, string text)
-        {
-            if (ui?.InputField == null || string.IsNullOrEmpty(text))
-                return text;
-
-            char first = text[0];
-            string fixedText;
-
-            if (DeadKeyMarks.IndexOf(first) >= 0)
-            {
-                fixedText = text.Substring(1);
-            }
-            else
-            {
-                int composed = ComposedChars.IndexOf(first);
-                if (composed < 0)
-                    return text;
-
-                fixedText = BaseChars[composed] + text.Substring(1);
-            }
-
-            ModLog.Debug("dead key off the prompt: '" + text + "' -> '" + fixedText + "'");
-
-            _suppressValueChanged = true;
-            try
-            {
-                ui.InputField.SetTextWithoutNotify(fixedText);
-                PinCaret(ui.InputField);
-            }
-            finally
-            {
-                _suppressValueChanged = false;
-            }
-
-            return fixedText;
-        }
-
-        /// <summary>
         /// Steps the highlight and wraps around at both ends, so Up on the first entry lands on the
         /// last one instead of getting stuck.
         /// </summary>
@@ -420,7 +355,7 @@ namespace ConsoleAutocomplete.Autocomplete
 
             EnsureWired(ui);
             CommandIndex.EnsureBuilt();
-            _lastText = text ?? string.Empty;
+
             int caret = ui.InputField.caretPosition;
             int selected = preserveSelection ? _selectedIndex : 0;
             _current = SuggestionEngine.Build(text, caret, selected);
@@ -474,18 +409,41 @@ namespace ConsoleAutocomplete.Autocomplete
         /// after the first letter while the insertion point was still at 0, so typing `give` produced
         /// `iveg` - the g stayed where it was and everything after it went in front of it.
         /// </summary>
+        /// <summary>Puts the caret at the end, after the mod has replaced the whole prompt.</summary>
         private static void PinCaret(TMP_InputField field)
         {
             if (field == null)
                 return;
 
-            int end = field.text != null ? field.text.Length : 0;
-            field.caretPosition = end;
-            field.selectionAnchorPosition = end;
-            field.selectionFocusPosition = end;
-            field.stringPosition = end;
-            field.selectionStringAnchorPosition = end;
-            field.selectionStringFocusPosition = end;
+            SetCaret(field, field.text != null ? field.text.Length : 0);
+        }
+
+        /// <summary>
+        /// Moves the caret, in BOTH of the two places TextMeshPro keeps it.
+        ///
+        /// A TMP_InputField carries two cursors: `caretPosition` is where the bar is drawn, and `stringPosition`
+        /// is where the next character is actually inserted. Setting only the visible one leaves the field looking
+        /// right and typing wrong, which is a fault nobody sees until the keystroke after the one that caused it.
+        /// </summary>
+        private static void SetCaret(TMP_InputField field, int at)
+        {
+            if (field == null)
+                return;
+
+            int max = field.text != null ? field.text.Length : 0;
+            at = Mathf.Clamp(at, 0, max);
+
+            // The label first. Both positions are mapped through textInfo.characterInfo, which describes the
+            // RENDERED text - after SetTextWithoutNotify that is still the old, shorter one, and ClampCaretPos
+            // would drag everything written here back onto it.
+            field.ForceLabelUpdate();
+
+            field.caretPosition = at;
+            field.selectionAnchorPosition = at;
+            field.selectionFocusPosition = at;
+            field.stringPosition = at;
+            field.selectionStringAnchorPosition = at;
+            field.selectionStringFocusPosition = at;
         }
     }
 
