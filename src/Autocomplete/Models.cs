@@ -23,6 +23,15 @@ namespace ConsoleAutocomplete.Autocomplete
 
         /// <summary>Index of the first matched character, breaks ties inside a match kind.</summary>
         public int MatchOffset { get; set; }
+
+        /// <summary>
+        /// A line the player has already run, not a completion.
+        ///
+        /// It replaces the WHOLE prompt when it is taken, where an ordinary suggestion replaces only the token under
+        /// the caret - `give ogkushseed 5` is one entry, not a completion of `give`. It also carries no ghost, since
+        /// there is no token for it to be the tail of.
+        /// </summary>
+        public bool IsHistory { get; set; }
     }
 
     public sealed class ArgCandidate

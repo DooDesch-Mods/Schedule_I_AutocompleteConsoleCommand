@@ -72,6 +72,7 @@ namespace ConsoleAutocomplete.Autocomplete
                 }
 
                 result.Suggestions = UsageStats.RankCommands(suggestions, prefix);
+                AppendHistory(result.Suggestions, input, caret);
                 result.SelectedIndex = ClampIndex(selectedIndex, result.Suggestions.Count);
                 if (result.Selected != null)
                 {
@@ -144,14 +145,65 @@ namespace ConsoleAutocomplete.Autocomplete
             }
 
             result.Suggestions = UsageStats.RankArgs(commandWord, argSuggestions, argPrefix);
+            AppendHistory(result.Suggestions, input, caret);
             result.SelectedIndex = ClampIndex(selectedIndex, result.Suggestions.Count);
             return result;
+        }
+
+        /// <summary>
+        /// Puts the lines already run at the BOTTOM of the list, under everything the ranker produced.
+        ///
+        /// This is what replaced walking the history with the arrow keys. Two lists behind one pair of keys needed a
+        /// mode to say which one was being walked, and every rule for entering and leaving that mode was wrong for
+        /// somebody: going up into the history and changing your mind left you unable to come back down into the
+        /// suggestions. One list has no modes.
+        ///
+        /// OLDEST FIRST, so the most recent command is the LAST entry. The selection wraps, so Up from the top of the
+        /// list lands on it - one press for the command just run, which is the press a player reaches for most.
+        ///
+        /// Appended rather than ranked in, because the position is the feature: ranking would scatter them through
+        /// the list by match quality and the bottom would stop meaning "things you have run".
+        /// </summary>
+        private static void AppendHistory(List<SuggestionItem> into, string input, int caret)
+        {
+            if (into == null)
+                return;
+
+            IReadOnlyList<string> lines = CommandHistory.Lines;
+            if (lines.Count == 0)
+                return;
+
+            // What has been typed so far, not the token under the caret: a history entry is a whole line, so
+            // `give og` has to keep `give ogkushseed 5` and drop `settime 700`.
+            string typed = (input ?? string.Empty).Substring(0, Math.Min(caret, (input ?? string.Empty).Length))
+                .TrimStart();
+
+            for (int i = lines.Count - 1; i >= 0; i--)
+            {
+                string line = lines[i];
+                if (typed.Length > 0 && !line.StartsWith(typed, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                into.Add(new SuggestionItem
+                {
+                    Value = line,
+                    DisplayLeft = line,
+                    SourceLabel = CommandHistory.Label,
+                    MatchKind = MatchKind.Substring,
+                    IsHistory = true,
+                });
+            }
         }
 
         public static string ApplySelection(string input, Result result)
         {
             if (result?.Selected == null)
                 return input ?? string.Empty;
+
+            // A history entry IS the prompt, where an ordinary suggestion completes the token under the caret.
+            // Replacing just the token would turn `give ogkushseed 5` into `give ogkushseed 5 5`.
+            if (result.Selected.IsHistory)
+                return result.Selected.Value ?? string.Empty;
 
             input = input ?? string.Empty;
             string replacement = result.Selected.Value ?? string.Empty;

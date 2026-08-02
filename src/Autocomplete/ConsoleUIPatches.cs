@@ -20,26 +20,6 @@ namespace ConsoleAutocomplete.Autocomplete
         private static int _selectedIndex;
         private static bool _suppressValueChanged;
 
-        /// <summary>
-        /// True while the arrow keys are walking the command history rather than the suggestion
-        /// list. Without it the first Up would recall a command, that command would fill the prompt,
-        /// suggestions would light up for it, and the second Up would jump into the suggestion list
-        /// instead of continuing back through history - which is not what anyone means by pressing
-        /// Up twice. Cleared as soon as the player types, completes with Tab, or closes the console.
-        /// </summary>
-        private static bool _historyMode;
-
-        /// <summary>
-        /// The mirror of <see cref="_historyMode"/>: true once Down has started walking the suggestion
-        /// list from an empty prompt, which hands BOTH arrows to the list until the player types.
-        ///
-        /// On an empty prompt the direction of the first press decides who owns the arrows - Up starts
-        /// on the history, Down starts on the suggestions. Without the mode, the second press would be
-        /// judged by the same "prompt is empty" test as the first and jump to the other one mid-walk.
-        /// Typing clears it, so an empty prompt is always back to the choice.
-        /// </summary>
-        private static bool _listMode;
-
         private static bool _listenerWired;
         private static ConsoleUI _wiredUi;
 
@@ -97,8 +77,6 @@ namespace ConsoleAutocomplete.Autocomplete
                     _overlay?.Hide();
                     _current = null;
                     _selectedIndex = 0;
-                    _historyMode = false;   // a fresh prompt starts on the suggestions again
-                    _listMode = false;
                     _awaitingFirstChar = false;
                     _repeatKey = KeyCode.None;
                     return;
@@ -159,20 +137,11 @@ namespace ConsoleAutocomplete.Autocomplete
                 // to see the key go up, or the next press would inherit the last one's schedule and
                 // fire its whole burst immediately.
                 int step = ArrowStep();
-                bool emptyPrompt = IsPromptEmpty(__instance);
 
-                // On an empty prompt the DIRECTION picks the list: Up walks the command history, Down
-                // walks the suggestions. Both used to go to the history, which left the suggestion list
-                // - every command there is, at that point - with no way to step through it at all.
-                if (suggestionsOpen && emptyPrompt && step > 0 && !_historyMode)
-                    _listMode = true;
-
-                // With a prefix typed the suggestions own both arrows outright. Walking the history
-                // keeps them until the player types again, so pressing Up twice goes two commands back
-                // instead of diving into the suggestions. Tab completes either way.
-                bool arrowsDriveSuggestions = suggestionsOpen && !_historyMode && (!emptyPrompt || _listMode);
-
-                if (arrowsDriveSuggestions && step != 0)
+                // Both arrows, always, with no test for what is in the prompt. The command history is
+                // now the bottom of this same list (SuggestionEngine.AppendHistory), so there is no
+                // second list to hand them to and no mode to be in.
+                if (suggestionsOpen && step != 0)
                     MoveSelection(__instance, step);
             }
             catch (Exception ex)
@@ -180,10 +149,6 @@ namespace ConsoleAutocomplete.Autocomplete
                 ModLog.ErrorOnce("console-update", "ConsoleUI Update hook failed: " + ex);
             }
         }
-
-        /// <summary>True when the prompt holds nothing a suggestion could usefully narrow.</summary>
-        private static bool IsPromptEmpty(ConsoleUI ui)
-            => ui?.InputField == null || string.IsNullOrWhiteSpace(ui.InputField.text);
 
         // Held-arrow repeat, in seconds. The pause before the first repeat is long enough that a normal
         // tap can never double-step, and the second gear exists because the suggestion list runs to
@@ -248,18 +213,13 @@ namespace ConsoleAutocomplete.Autocomplete
         {
             __state = __instance?.InputField != null ? __instance.InputField.text : null;
 
-            // Nothing to suggest, or the walk through the history has already begun: vanilla runs.
-            if (!SuggestionsActive || _historyMode)
-                return true;
-
-            // A prefix to filter by means the suggestions own both arrows.
-            if (!IsPromptEmpty(__instance))
-                return false;
-
-            // Empty prompt: Up is the history's, Down belongs to the suggestion list. It has to be
-            // blocked here as well as handled in the postfix, because vanilla steps the history from
-            // inside ConsoleUI.Update, which runs first - otherwise one Down would do both.
-            return !_listMode && !Input.GetKeyDown(KeyCode.DownArrow);
+            // Vanilla's own history walk is switched off entirely whenever there is a list on screen,
+            // because that list already ends with the same history and the arrows are stepping it. Left
+            // running, one press would move the selection AND recall a line into the prompt.
+            //
+            // Still allowed to run when there is nothing to suggest - then it is the only thing the
+            // arrows could do, and the mod has no screen up to own them.
+            return !SuggestionsActive;
         }
 
         [HarmonyPatch(typeof(ConsoleUI), "UpdateCommandHistory")]
@@ -276,7 +236,6 @@ namespace ConsoleAutocomplete.Autocomplete
                 string now = __instance.InputField.text;
                 if (!string.Equals(now, __state, StringComparison.Ordinal))
                 {
-                    _historyMode = true;   // a recall happened: the arrows stay with the history
                     Refresh(__instance, now);
                 }
             }
@@ -344,10 +303,6 @@ namespace ConsoleAutocomplete.Autocomplete
             }
 
             ModLog.Debug("onValueChanged: '" + text + "'");
-            // Vanilla recalls history with SetTextWithoutNotify, so reaching this handler always
-            // means the player typed - which ends the history walk and hands the arrows back to
-            // the suggestions.
-            _historyMode = false;
             _selectedIndex = 0;
             Refresh(ui, text);
         }
@@ -474,7 +429,6 @@ namespace ConsoleAutocomplete.Autocomplete
 
             string next = SuggestionEngine.ApplySelection(ui.InputField.text, _current);
             ModLog.Debug("Tab apply → '" + next + "'");
-            _historyMode = false;
             _suppressValueChanged = true;
             try
             {
@@ -615,6 +569,11 @@ namespace ConsoleAutocomplete.Autocomplete
                 ModLog.Debug("SubmitCommand tokens: " + string.Join(" ", tokens));
                 UsageStats.EnsureLoadedForCurrentSave();
                 UsageStats.RecordCommandLine(tokens);
+
+                // The same line, kept verbatim for the history block at the bottom of the suggestion list. Recorded
+                // from here rather than read out of ConsoleUI's private list, which would need interop reflection
+                // for something this hook already has in its hands.
+                CommandHistory.Record(string.Join(" ", tokens));
             }
             catch (Exception ex)
             {
