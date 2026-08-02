@@ -17,7 +17,7 @@ namespace ConsoleAutocomplete.Autocomplete
     /// </summary>
     public static class CommandHistory
     {
-        /// <summary>Enough to cover a working session without the list becoming something to scroll through.</summary>
+        /// <summary>Enough for a working session, few enough that the list stays worth stepping through.</summary>
         private const int Keep = 25;
 
         /// <summary>What the overlay prints in the source column for these rows.</summary>

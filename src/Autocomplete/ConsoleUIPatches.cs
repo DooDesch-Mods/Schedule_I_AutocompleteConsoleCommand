@@ -37,14 +37,13 @@ namespace ConsoleAutocomplete.Autocomplete
         /// <summary>
         /// True from the moment the console opens until the first character lands in the prompt.
         ///
-        /// The key that opens the console is a DEAD KEY on several layouts - `^` on German and Swiss
-        /// keyboards, `´` on others. A dead key emits nothing of its own when pressed: the system holds
-        /// the mark and hands it to the next keystroke. So the console opens on `^`, the player types
-        /// `help`, and the prompt reads `^help` - or `âdd`, when the next letter is a vowel the mark
-        /// composes with.
+        /// The key that opens the console is a DEAD KEY on several layouts - `^` on German and Swiss keyboards,
+        /// `´` on others. A dead key emits nothing of its own when pressed: the system holds the mark and hands
+        /// it to the next keystroke. So the console opens on `^`, the player types `help`, and the prompt reads
+        /// `^help` - or `âdd`, when the next letter is a vowel the mark composes with.
         ///
-        /// Vanilla cannot catch this. It clears the field in SetIsOpen (ScheduleOne.UI/ConsoleUI.cs:107)
-        /// BEFORE the mark arrives, and once it arrives nothing distinguishes it from typing.
+        /// Vanilla cannot catch this. It clears the field in SetIsOpen (ScheduleOne.UI/ConsoleUI.cs:107) BEFORE
+        /// the mark arrives, and once it arrives nothing distinguishes it from typing.
         /// </summary>
         private static bool _awaitingFirstChar;
 
@@ -126,11 +125,10 @@ namespace ConsoleAutocomplete.Autocomplete
                 // Escape closes the console on the FIRST press.
                 //
                 // Vanilla needs two. Its exit handling gives up while the player is typing
-                // (ScheduleOne/GameInput.cs:258 returns early on GameInput.IsTyping), and an open
-                // console is by definition typing - so the first Escape never reaches the exit
-                // listener that ConsoleUI.Awake registered. All it does is take the focus out of the
-                // input field, which leaves the console standing there looking unchanged. Only the
-                // second press, with IsTyping now false, gets through and closes it.
+                // (ScheduleOne/GameInput.cs:258 returns early on GameInput.IsTyping), and an open console is by
+                // definition typing - so the first Escape never reaches the exit listener ConsoleUI.Awake
+                // registered. All it does is take the focus out of the input field, which leaves the console
+                // standing there looking unchanged. Only the second press, with IsTyping false, gets through.
                 if (Input.GetKeyDown(KeyCode.Escape))
                 {
                     __instance.SetIsOpen(false);
@@ -145,14 +143,13 @@ namespace ConsoleAutocomplete.Autocomplete
                     return;
                 }
 
-                // Read the arrows every frame, not only when they drive the list: the repeat timer has
-                // to see the key go up, or the next press would inherit the last one's schedule and
-                // fire its whole burst immediately.
+                // Read every frame, not only when the arrows drive the list: the repeat timer has to see the
+                // key go up, or the next press would inherit the last one's schedule and fire its whole burst.
                 int step = ArrowStep();
 
-                // Both arrows, always, with no test for what is in the prompt. The command history is
-                // now the bottom of this same list (SuggestionEngine.AppendHistory), so there is no
-                // second list to hand them to and no mode to be in.
+                // Both arrows, always, with no test for what is in the prompt. The command history is the bottom
+                // of this same list now (SuggestionEngine.AppendHistory), so there is no second list to hand them
+                // to and no mode to be in.
                 if (suggestionsOpen && step != 0)
                     MoveSelection(__instance, step);
             }
@@ -162,75 +159,18 @@ namespace ConsoleAutocomplete.Autocomplete
             }
         }
 
-        // Held-arrow repeat, in seconds. The pause before the first repeat is long enough that a normal
-        // tap can never double-step, and the second gear exists because the suggestion list runs to
-        // hundreds of entries - at one speed, holding Up is either twitchy on a short list or a wait on
-        // a long one. Not read from the OS key-repeat settings: those only reach text fields, and this
-        // list is drawn and stepped by the mod.
-        private const float RepeatDelay = 0.35f;
-        private const float RepeatInterval = 0.06f;
-        private const float RepeatSecondGearAfter = 1.2f;
-        private const float RepeatSecondGearInterval = 0.03f;
-
-        private static KeyCode _repeatKey = KeyCode.None;
-        private static float _repeatHeldSince;
-        private static float _repeatNextAt;
-
-        /// <summary>
-        /// -1 to step up, +1 to step down, 0 for nothing this frame - including the quiet stretch
-        /// between a key going down and its repeat starting.
-        ///
-        /// Unity's GetKeyDown fires exactly once per press, so holding an arrow moved one entry and then
-        /// sat there. Unscaled time, because the console is usable while the game is not running.
-        /// </summary>
-        private static int ArrowStep()
-        {
-            KeyCode key = Input.GetKey(KeyCode.UpArrow)
-                ? KeyCode.UpArrow
-                : Input.GetKey(KeyCode.DownArrow)
-                    ? KeyCode.DownArrow
-                    : KeyCode.None;
-
-            if (key == KeyCode.None)
-            {
-                _repeatKey = KeyCode.None;
-                return 0;
-            }
-
-            float now = Time.unscaledTime;
-            int step = key == KeyCode.UpArrow ? -1 : 1;
-
-            // A fresh press, or a reversal while the other arrow is still down: either way the new
-            // direction starts its own delay, so turning round never fires a burst.
-            if (_repeatKey != key)
-            {
-                _repeatKey = key;
-                _repeatHeldSince = now;
-                _repeatNextAt = now + RepeatDelay;
-                return step;
-            }
-
-            if (now < _repeatNextAt)
-                return 0;
-
-            _repeatNextAt = now + (now - _repeatHeldSince >= RepeatSecondGearAfter
-                ? RepeatSecondGearInterval
-                : RepeatInterval);
-            return step;
-        }
-
         [HarmonyPatch(typeof(ConsoleUI), "UpdateCommandHistory")]
         [HarmonyPrefix]
         private static bool UpdateCommandHistoryPrefix(ConsoleUI __instance, out string __state)
         {
             __state = __instance?.InputField != null ? __instance.InputField.text : null;
 
-            // Vanilla's own history walk is switched off entirely whenever there is a list on screen,
-            // because that list already ends with the same history and the arrows are stepping it. Left
-            // running, one press would move the selection AND recall a line into the prompt.
+            // Vanilla's own history walk is switched off whenever there is a list on screen, because that
+            // list already ends with the same history and the arrows are stepping it. Left running, one press
+            // would move the selection AND recall a line into the prompt.
             //
-            // Still allowed to run when there is nothing to suggest - then it is the only thing the
-            // arrows could do, and the mod has no screen up to own them.
+            // Still allowed to run when there is nothing to suggest: then it is the only thing the arrows could
+            // do, and the mod has no screen up to own them.
             return !SuggestionsActive;
         }
 
@@ -326,6 +266,63 @@ namespace ConsoleAutocomplete.Autocomplete
             ModLog.Debug("onValueChanged: '" + text + "'");
             _selectedIndex = 0;
             Refresh(ui, text);
+        }
+
+        // Held-arrow repeat, in seconds. The pause before the first repeat is long enough that a normal
+        // tap can never double-step, and the second gear exists because the suggestion list runs to
+        // hundreds of entries - at one speed, holding Up is either twitchy on a short list or a wait on
+        // a long one. Not read from the OS key-repeat settings: those only reach text fields, and this
+        // list is drawn and stepped by the mod.
+        private const float RepeatDelay = 0.35f;
+        private const float RepeatInterval = 0.06f;
+        private const float RepeatSecondGearAfter = 1.2f;
+        private const float RepeatSecondGearInterval = 0.03f;
+
+        private static KeyCode _repeatKey = KeyCode.None;
+        private static float _repeatHeldSince;
+        private static float _repeatNextAt;
+
+        /// <summary>
+        /// -1 to step up, +1 to step down, 0 for nothing this frame - including the quiet stretch
+        /// between a key going down and its repeat starting.
+        ///
+        /// Unity's GetKeyDown fires exactly once per press, so holding an arrow moved one entry and then
+        /// sat there. Unscaled time, because the console is usable while the game is not running.
+        /// </summary>
+        private static int ArrowStep()
+        {
+            KeyCode key = Input.GetKey(KeyCode.UpArrow)
+                ? KeyCode.UpArrow
+                : Input.GetKey(KeyCode.DownArrow)
+                    ? KeyCode.DownArrow
+                    : KeyCode.None;
+
+            if (key == KeyCode.None)
+            {
+                _repeatKey = KeyCode.None;
+                return 0;
+            }
+
+            float now = Time.unscaledTime;
+            int step = key == KeyCode.UpArrow ? -1 : 1;
+
+            // A fresh press, or a reversal while the other arrow is still down: either way the new
+            // direction starts its own delay, so turning round never fires a burst.
+            if (_repeatKey != key)
+            {
+                _repeatKey = key;
+                _repeatHeldSince = now;
+                _repeatNextAt = now + RepeatDelay;
+                return step;
+            }
+
+            if (now < _repeatNextAt)
+                return 0;
+
+            _repeatNextAt = now + (now - _repeatHeldSince >= RepeatSecondGearAfter
+                ? RepeatSecondGearInterval
+                : RepeatInterval);
+            return step;
         }
 
         /// <summary>
