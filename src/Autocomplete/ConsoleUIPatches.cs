@@ -87,6 +87,7 @@ namespace ConsoleAutocomplete.Autocomplete
                     _selectedIndex = 0;
                     _historyMode = false;   // a fresh prompt starts on the suggestions again
                     _awaitingFirstChar = false;
+                    _repeatKey = KeyCode.None;
                     return;
                 }
 
@@ -135,16 +136,12 @@ namespace ConsoleAutocomplete.Autocomplete
                 // Tab still completes either way.
                 bool arrowsDriveSuggestions = suggestionsOpen && !IsPromptEmpty(__instance) && !_historyMode;
 
-                if (arrowsDriveSuggestions && Input.GetKeyDown(KeyCode.UpArrow))
-                {
-                    MoveSelection(__instance, -1);
-                    return;
-                }
-
-                if (arrowsDriveSuggestions && Input.GetKeyDown(KeyCode.DownArrow))
-                {
-                    MoveSelection(__instance, 1);
-                }
+                // Read the arrows every frame, not only when they drive the list: the repeat timer has
+                // to see the key go up, or the next press would inherit the last one's schedule and
+                // fire its whole burst immediately.
+                int step = ArrowStep();
+                if (arrowsDriveSuggestions && step != 0)
+                    MoveSelection(__instance, step);
             }
             catch (Exception ex)
             {
@@ -155,6 +152,63 @@ namespace ConsoleAutocomplete.Autocomplete
         /// <summary>True when the prompt holds nothing a suggestion could usefully narrow.</summary>
         private static bool IsPromptEmpty(ConsoleUI ui)
             => ui?.InputField == null || string.IsNullOrWhiteSpace(ui.InputField.text);
+
+        // Held-arrow repeat, in seconds. The pause before the first repeat is long enough that a normal
+        // tap can never double-step, and the second gear exists because the suggestion list runs to
+        // hundreds of entries - at one speed, holding Up is either twitchy on a short list or a wait on
+        // a long one. Not read from the OS key-repeat settings: those only reach text fields, and this
+        // list is drawn and stepped by the mod.
+        private const float RepeatDelay = 0.35f;
+        private const float RepeatInterval = 0.06f;
+        private const float RepeatSecondGearAfter = 1.2f;
+        private const float RepeatSecondGearInterval = 0.03f;
+
+        private static KeyCode _repeatKey = KeyCode.None;
+        private static float _repeatHeldSince;
+        private static float _repeatNextAt;
+
+        /// <summary>
+        /// -1 to step up, +1 to step down, 0 for nothing this frame - including the quiet stretch
+        /// between a key going down and its repeat starting.
+        ///
+        /// Unity's GetKeyDown fires exactly once per press, so holding an arrow moved one entry and then
+        /// sat there. Unscaled time, because the console is usable while the game is not running.
+        /// </summary>
+        private static int ArrowStep()
+        {
+            KeyCode key = Input.GetKey(KeyCode.UpArrow)
+                ? KeyCode.UpArrow
+                : Input.GetKey(KeyCode.DownArrow)
+                    ? KeyCode.DownArrow
+                    : KeyCode.None;
+
+            if (key == KeyCode.None)
+            {
+                _repeatKey = KeyCode.None;
+                return 0;
+            }
+
+            float now = Time.unscaledTime;
+            int step = key == KeyCode.UpArrow ? -1 : 1;
+
+            // A fresh press, or a reversal while the other arrow is still down: either way the new
+            // direction starts its own delay, so turning round never fires a burst.
+            if (_repeatKey != key)
+            {
+                _repeatKey = key;
+                _repeatHeldSince = now;
+                _repeatNextAt = now + RepeatDelay;
+                return step;
+            }
+
+            if (now < _repeatNextAt)
+                return 0;
+
+            _repeatNextAt = now + (now - _repeatHeldSince >= RepeatSecondGearAfter
+                ? RepeatSecondGearInterval
+                : RepeatInterval);
+            return step;
+        }
 
         [HarmonyPatch(typeof(ConsoleUI), "UpdateCommandHistory")]
         [HarmonyPrefix]
