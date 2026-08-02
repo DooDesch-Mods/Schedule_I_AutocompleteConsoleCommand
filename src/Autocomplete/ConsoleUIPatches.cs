@@ -120,6 +120,20 @@ namespace ConsoleAutocomplete.Autocomplete
                 if (__instance.InputField == null)
                     return;
 
+                // Escape closes the console on the FIRST press.
+                //
+                // Vanilla needs two. Its exit handling gives up while the player is typing
+                // (ScheduleOne/GameInput.cs:258 returns early on GameInput.IsTyping), and an open
+                // console is by definition typing - so the first Escape never reaches the exit
+                // listener that ConsoleUI.Awake registered. All it does is take the focus out of the
+                // input field, which leaves the console standing there looking unchanged. Only the
+                // second press, with IsTyping now false, gets through and closes it.
+                if (Input.GetKeyDown(KeyCode.Escape))
+                {
+                    __instance.SetIsOpen(false);
+                    return;
+                }
+
                 bool suggestionsOpen = SuggestionsActive;
 
                 if (suggestionsOpen && Input.GetKeyDown(KeyCode.Tab))
