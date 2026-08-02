@@ -31,6 +31,20 @@ namespace ConsoleAutocomplete.Autocomplete
         private static bool _listenerWired;
         private static ConsoleUI _wiredUi;
 
+        /// <summary>
+        /// True from the moment the console opens until the first character lands in the prompt.
+        ///
+        /// The key that opens the console is a DEAD KEY on several layouts - `^` on German and Swiss
+        /// keyboards, `´` on others. A dead key emits nothing of its own when pressed: the system holds
+        /// the mark and hands it to the next keystroke. So the console opens on `^`, the player types
+        /// `help`, and the prompt reads `^help` - or `âdd`, when the next letter is a vowel the mark
+        /// composes with.
+        ///
+        /// Vanilla cannot catch this. It clears the field in SetIsOpen (ScheduleOne.UI/ConsoleUI.cs:107)
+        /// BEFORE the mark arrives, and once it arrives nothing distinguishes it from typing.
+        /// </summary>
+        private static bool _awaitingFirstChar;
+
         internal static bool SuggestionsActive =>
             _overlay != null && _overlay.IsVisible && _current != null && _current.HasSuggestions;
 
@@ -72,8 +86,13 @@ namespace ConsoleAutocomplete.Autocomplete
                     _current = null;
                     _selectedIndex = 0;
                     _historyMode = false;   // a fresh prompt starts on the suggestions again
+                    _awaitingFirstChar = false;
                     return;
                 }
+
+                // Vanilla has just emptied the field, so whatever arrives next is the first thing the
+                // player typed - and possibly the toggle key's dead-key mark riding along with it.
+                _awaitingFirstChar = true;
 
                 UsageStats.EnsureLoadedForCurrentSave();
                 CommandIndex.MarkDirty();
@@ -224,6 +243,12 @@ namespace ConsoleAutocomplete.Autocomplete
             if (_suppressValueChanged)
                 return;
 
+            if (_awaitingFirstChar)
+            {
+                _awaitingFirstChar = false;
+                text = DropPendingDeadKey(ui, text);
+            }
+
             ModLog.Debug("onValueChanged: '" + text + "'");
             // Vanilla recalls history with SetTextWithoutNotify, so reaching this handler always
             // means the player typed - which ends the history walk and hands the arrows back to
@@ -231,6 +256,79 @@ namespace ConsoleAutocomplete.Autocomplete
             _historyMode = false;
             _selectedIndex = 0;
             Refresh(ui, text);
+        }
+
+        /// <summary>
+        /// The marks a dead key leaves behind on their own, when the layout could not compose them with
+        /// the letter that followed: circumflex, grave, acute, tilde.
+        /// </summary>
+        private const string DeadKeyMarks = "^`\u00B4~";   // ^ ` ´ ~
+
+        /// <summary>
+        /// Composed characters a dead key produces, paired index-for-index with the letter underneath.
+        /// Circumflex first (the German and Swiss console key), then grave, acute and tilde, because
+        /// those sit under the console toggle on French, Spanish and Portuguese layouts.
+        ///
+        /// Written as escapes rather than as the characters themselves so the table cannot be silently
+        /// mangled by a tool that guesses this file's encoding wrong.
+        /// </summary>
+        private const string ComposedChars =
+            "\u00E2\u00EA\u00EE\u00F4\u00FB\u00C2\u00CA\u00CE\u00D4\u00DB"    // â ê î ô û Â Ê Î Ô Û
+            + "\u00E0\u00E8\u00EC\u00F2\u00F9\u00C0\u00C8\u00CC\u00D2\u00D9"  // à è ì ò ù À È Ì Ò Ù
+            + "\u00E1\u00E9\u00ED\u00F3\u00FA\u00C1\u00C9\u00CD\u00D3\u00DA"  // á é í ó ú Á É Í Ó Ú
+            + "\u00E3\u00F1\u00F5\u00C3\u00D1\u00D5";                         // ã ñ õ Ã Ñ Õ
+
+        private const string BaseChars =
+            "aeiouAEIOU"
+            + "aeiouAEIOU"
+            + "aeiouAEIOU"
+            + "anoANO";
+
+        /// <summary>
+        /// Takes the toggle key's pending dead-key mark off the front of a freshly opened prompt.
+        ///
+        /// Only ever looks at the FIRST character of the FIRST input after opening, which is the only
+        /// place a pending mark can land - so a `^` typed anywhere else, at any later moment, is left
+        /// alone. Nothing in the command set starts with one of these characters.
+        ///
+        /// The composed case has to put the letter back rather than drop the character: `^` followed by
+        /// `a` arrives as a single `â`, and deleting it would eat the first letter of the command.
+        /// </summary>
+        private static string DropPendingDeadKey(ConsoleUI ui, string text)
+        {
+            if (ui?.InputField == null || string.IsNullOrEmpty(text))
+                return text;
+
+            char first = text[0];
+            string fixedText;
+
+            if (DeadKeyMarks.IndexOf(first) >= 0)
+            {
+                fixedText = text.Substring(1);
+            }
+            else
+            {
+                int composed = ComposedChars.IndexOf(first);
+                if (composed < 0)
+                    return text;
+
+                fixedText = BaseChars[composed] + text.Substring(1);
+            }
+
+            ModLog.Debug("dead key off the prompt: '" + text + "' -> '" + fixedText + "'");
+
+            _suppressValueChanged = true;
+            try
+            {
+                ui.InputField.SetTextWithoutNotify(fixedText);
+                PinCaret(ui.InputField);
+            }
+            finally
+            {
+                _suppressValueChanged = false;
+            }
+
+            return fixedText;
         }
 
         /// <summary>
