@@ -17,18 +17,15 @@
       reference set, so the path has to exist on whatever machine is building.
 
       Order: an explicit -p:GameCorePath wins, then local.build.props (gitignored - put your own
-      path there), then the default Steam locations below. Steam's own install path comes from the
-      registry, so the common case needs no configuration at all.
+      path there), then Steam's install path from the registry. A copy in a second Steam library
+      folder is not found that way and needs local.build.props once.
 
-      A single hardcoded path used to be the only option, and on any machine that did not match it
-      the build produced 120+ "the type or namespace ScheduleOne does not exist" errors, which read
-      like the game had changed rather than like a wrong path.
+      No literal path belongs in here. A hardcoded one used to be the only option, and on any
+      machine that did not match it the build produced 120+ "the type or namespace ScheduleOne
+      does not exist" errors, which read like the game had changed rather than like a wrong path.
     -->
     <SteamPath Condition="'$(SteamPath)' == ''">$(registry:HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Valve\Steam@InstallPath)</SteamPath>
     <GameCorePath Condition="'$(GameCorePath)' == '' AND '$(SteamPath)' != '' AND Exists('$(SteamPath)\steamapps\common\Schedule I\Schedule I.exe')">$(SteamPath)\steamapps\common\Schedule I</GameCorePath>
-    <GameCorePath Condition="'$(GameCorePath)' == '' AND Exists('C:\Program Files (x86)\Steam\steamapps\common\Schedule I\Schedule I.exe')">C:\Program Files (x86)\Steam\steamapps\common\Schedule I</GameCorePath>
-    <GameCorePath Condition="'$(GameCorePath)' == '' AND Exists('D:\SteamLibrary\steamapps\common\Schedule I\Schedule I.exe')">D:\SteamLibrary\steamapps\common\Schedule I</GameCorePath>
-    <GameCorePath Condition="'$(GameCorePath)' == '' AND Exists('E:\SteamLibrary\steamapps\common\Schedule I\Schedule I.exe')">E:\SteamLibrary\steamapps\common\Schedule I</GameCorePath>
     <MelonLoaderPath>$(GameCorePath)\MelonLoader</MelonLoaderPath>
     <Il2CppAssembliesPath>$(MelonLoaderPath)\Il2CppAssemblies</Il2CppAssembliesPath>
   </PropertyGroup>
